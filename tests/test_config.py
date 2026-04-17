@@ -1,0 +1,251 @@
+import os
+from pathlib import Path
+
+import pytest
+import tomli_w
+
+from fund_nav_mcp.config import (
+    MCPSettings,
+    setup_settings,
+    get_settings,
+    store_settings,
+)
+from fund_nav_mcp.models.schemas import DatabaseConfig, CacheConfig
+
+
+@pytest.fixture(autouse=True)
+def clean_globals():
+    """每个测试前后重置全局 _settings 变量和清除环境变量影响"""
+    import fund_nav_mcp.config as config_module
+    # 保存原始值
+    original_settings = config_module._settings  # noqa
+    # 重置
+    config_module._settings = None
+    yield
+    config_module._settings = original_settings
+    # 清理可能的环境变量
+    for key in list(os.environ.keys()):
+        if key.startswith("MCP_"):
+            del os.environ[key]
+
+
+@pytest.fixture
+def mock_config_path(tmp_path: Path, monkeypatch):
+    """模拟配置文件路径为临时目录，并替换模块中的 _CONFIG_PATH"""
+    fake_config = tmp_path / "config.test.toml"
+    import fund_nav_mcp.config as config_module
+    monkeypatch.setattr(config_module, "_CONFIG_PATH", fake_config)
+    return fake_config
+
+
+@pytest.fixture(autouse=True)
+def patch_toml_file(mock_config_path, monkeypatch):
+    """自动将所有测试中的 MCPSettings 的 toml_file 指向临时路径"""
+    monkeypatch.setitem(MCPSettings.model_config, "toml_file", mock_config_path)
+
+
+class TestMCPSettings:
+    """测试 MCPSettings 配置类"""
+
+    def test_default_values(self, mock_config_path):
+        """测试默认值：无配置时使用默认值，且验证器添加默认数据库和缓存"""
+        settings = MCPSettings()
+        assert settings.timezone == "Asia/Shanghai"
+        assert settings.default_currency == "CNY"
+        # 验证器应自动添加 default 条目
+        assert "default" in settings.databases
+        assert isinstance(settings.databases["default"], DatabaseConfig)
+        assert "default" in settings.caches
+        assert isinstance(settings.caches["default"], CacheConfig)
+
+    def test_env_var_loading(self, mock_config_path, monkeypatch):
+        if mock_config_path.exists():
+            mock_config_path.unlink()
+        """测试环境变量加载：MCP_TIMEZONE, MCP_DEFAULT_CURRENCY, 嵌套变量"""
+        monkeypatch.setenv("MCP_TIMEZONE", "America/New_York")
+        monkeypatch.setenv("MCP_DEFAULT_CURRENCY", "USD")
+        monkeypatch.setenv("MCP_DATABASES__default__URL", "postgresql://test")
+        monkeypatch.setenv("MCP_CACHES__default__TTL_SECONDS", "199")
+
+        settings = MCPSettings()
+        assert settings.timezone == "America/New_York"
+        assert settings.default_currency == "USD"
+        assert settings.databases["default"].url == "postgresql://test"
+        assert settings.caches["default"].ttl_seconds == 199
+
+    def test_toml_file_loading(self, mock_config_path, monkeypatch):
+        """测试从 TOML 文件加载配置（优先级高于环境变量）"""
+        monkeypatch.setenv("MCP_CONFIG_PRIORITY", "toml_first")
+
+        toml_data = {
+            "timezone": "Europe/London",
+            "default_currency": "GBP",
+            "databases": {
+                "default": {"url": "sqlite:///test.db"},
+                "replica": {"url": "postgresql://replica"}
+            },
+            "caches": {
+                "default": {"ttl_seconds": 120, "max_size": 100}
+            }
+        }
+        with open(mock_config_path, "wb") as f:
+            tomli_w.dump(toml_data, f)
+
+        settings = MCPSettings()
+
+        assert settings.timezone == "Europe/London"
+        assert settings.default_currency == "GBP"
+        assert settings.databases["replica"].url == "postgresql://replica"
+        assert settings.caches["default"].ttl_seconds == 120
+
+    def test_toml_overrides_env(self, mock_config_path, monkeypatch):
+        """TOML 文件优先级应高于环境变量"""
+        monkeypatch.setenv("MCP_CONFIG_PRIORITY", "toml_first")
+        # 环境变量设置
+        monkeypatch.setenv("MCP_TIMEZONE", "Asia/Tokyo")
+        monkeypatch.setenv("MCP_DEFAULT_CURRENCY", "JPY")
+        # TOML 文件设置不同的值
+        toml_data = {"timezone": "Australia/Sydney", "default_currency": "AUD"}
+        with open(mock_config_path, "wb") as f:
+            tomli_w.dump(toml_data, f)
+
+        settings = MCPSettings()
+        # TOML 的值应生效
+        assert settings.timezone == "Australia/Sydney"
+        assert settings.default_currency == "AUD"
+
+    def test_store_creates_file(self, mock_config_path):
+        """测试 store 方法生成 TOML 文件"""
+        settings = MCPSettings()
+        # 修改一些值
+        settings.timezone = "Pacific/Auckland"
+        settings.default_currency = "NZD"
+        settings.databases["custom"] = DatabaseConfig(url="mysql://custom")
+        settings.store()
+
+        assert mock_config_path.exists()
+        with open(mock_config_path, "rb") as f:
+            import tomllib
+            saved = tomllib.load(f)
+        assert saved["timezone"] == "Pacific/Auckland"
+        assert saved["default_currency"] == "NZD"
+        assert saved["databases"]["custom"]["url"] == "mysql://custom"
+
+    def test_init_auto_store_when_file_missing(self, mock_config_path):
+        """实例化时如果配置文件不存在，应自动调用 store() 创建文件"""
+        assert not mock_config_path.exists()
+        _ = MCPSettings()
+        assert mock_config_path.exists()
+        # 验证文件内容包含默认配置（经过验证器后的）
+        with open(mock_config_path, "rb") as f:
+            import tomllib
+            saved = tomllib.load(f)
+        assert "databases" in saved
+        assert "default" in saved["databases"]
+        assert "caches" in saved
+        assert "default" in saved["caches"]
+
+    def test_set_default_db_with_cache_validator(self, mock_config_path):
+        """验证器应在没有数据库/缓存时添加默认值，已有时不覆盖"""
+        settings = MCPSettings(
+            databases={"primary": DatabaseConfig(url="sqlite:///primary.db")},
+            caches={"primary": CacheConfig(ttl_seconds=60)}
+        )
+        # 验证器不应覆盖已有的
+        assert "primary" in settings.databases
+        assert "default" not in settings.databases
+        assert "primary" in settings.caches
+        assert "default" not in settings.caches
+
+
+class TestGlobalFunctions:
+    """测试全局配置实例管理函数"""
+
+    def test_setup_settings(self, mock_config_path):
+        """setup_settings 应创建并返回新实例，更新全局 _settings"""
+        settings = setup_settings()
+        assert isinstance(settings, MCPSettings)
+        settings2 = setup_settings()
+        assert settings2 == settings
+
+    def test_get_settings_initial_none(self, mock_config_path):
+        """get_settings 在 _settings 为 None 时应自动创建实例"""
+        import fund_nav_mcp.config as config_module
+        config_module._settings = None
+        settings = get_settings()
+        assert isinstance(settings, MCPSettings)
+        # 再次调用应返回同一实例
+        settings2 = get_settings()
+        assert settings2 is settings
+
+    def test_get_settings_reload(self, mock_config_path):
+        """reload=True 时应重新创建实例"""
+        settings1 = get_settings()
+        settings1.timezone = "Custom/Zone"
+        # 修改环境变量以验证新实例会重新加载
+        os.environ["MCP_TIMEZONE"] = "New/Zone"
+        settings2 = get_settings(reload=True)
+        assert settings2 is not settings1
+        assert settings2.timezone == "New/Zone"
+
+    def test_store_settings_without_arg(self, mock_config_path):
+        """store_settings() 无参时应保存当前全局实例"""
+        settings = get_settings()
+        settings.timezone = "Africa/Cairo"
+        store_settings()
+        assert mock_config_path.exists()
+        with open(mock_config_path, "rb") as f:
+            import tomllib
+            saved = tomllib.load(f)
+        assert saved["timezone"] == "Africa/Cairo"
+
+    def test_store_settings_with_arg(self, mock_config_path):
+        """store_settings(settings) 应保存指定实例"""
+        settings1 = MCPSettings()
+        settings1.timezone = "America/Argentina"
+        settings2 = MCPSettings()
+        settings2.timezone = "Antarctica/McMurdo"
+        store_settings(settings1)
+        # 验证保存的是 settings1 的内容
+        with open(mock_config_path, "rb") as f:
+            import tomllib
+            saved = tomllib.load(f)
+        assert saved["timezone"] == "America/Argentina"
+        # 再保存 settings2
+        store_settings(settings2)
+        with open(mock_config_path, "rb") as f:
+            import tomllib
+            saved = tomllib.load(f)
+        assert saved["timezone"] == "Antarctica/McMurdo"
+
+
+class TestSettingsCustomisation:
+    """测试自定义配置源顺序"""
+
+    def test_source_order(self, mock_config_path, monkeypatch):
+        """验证配置源顺序：TOML 文件优先于环境变量"""
+        monkeypatch.setenv("MCP_CONFIG_PRIORITY", "toml_first")
+        # 同时设置环境变量和 TOML 文件
+        monkeypatch.setenv("MCP_TIMEZONE", "Env/Zone")
+        toml_data = {"timezone": "Toml/Zone"}
+        with open(mock_config_path, "wb") as f:
+            tomli_w.dump(toml_data, f)
+
+        settings = MCPSettings()
+        # TOML 的值应覆盖环境变量
+        assert settings.timezone == "Toml/Zone"
+
+        # 删除 TOML 文件，应回退到环境变量
+        mock_config_path.unlink()
+        settings2 = MCPSettings()
+        assert settings2.timezone == "Env/Zone"
+
+    def test_env_nested_delimiter(self, mock_config_path, monkeypatch):
+        """测试环境变量嵌套分隔符 __ 能正确解析嵌套字段"""
+        monkeypatch.setenv("MCP_CONFIG_PRIORITY", "env_first")
+        monkeypatch.setenv("MCP_DATABASES__replica__URL", "redis://replica")
+        monkeypatch.setenv("MCP_DATABASES__replica__POOL_SIZE", "5")
+        settings = MCPSettings()
+        assert "replica" in settings.databases
+        assert settings.databases["replica"].url == "redis://replica"
+        assert settings.databases["replica"].pool_size == 5
