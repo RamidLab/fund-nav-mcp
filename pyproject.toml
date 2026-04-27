@@ -19,9 +19,14 @@ classifiers = [
 ]
 dependencies = [
     "fastmcp[apps,tasks]>=3.2.3",
+    "influxdb-client>=1.50.0",
+    "psycopg2>=2.9.12",
     "pydantic>=2.13.0",
     "pydantic-settings[toml]>=2.13.1",
-    "structlog>=25.5.0",
+    "pymysql>=1.1.2",
+    "redis>=7.4.0",
+    "requests>=2.33.1",
+    "sqlalchemy>=2.0.49",
     "tomli>=2.4.1",
     "tomli-w>=1.2.0",
 ]

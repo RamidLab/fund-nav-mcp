@@ -13,10 +13,10 @@ class UtilResponse(BaseModel):
     继承自 Pydantic 的 BaseModel，自动提供数据验证和序列化功能。
 
     Attributes:
-        status (str): 响应状态码，如 "success" 或 "error" 或其他自定义状态码。
+        code (int): 响应状态码，如其他自定义状态码。
         message (str): 对状态码的文本说明，如“成功”或错误详情。
         data (Optional[Any]): 实际返回的数据负载，可为 None 或任意 JSON 可序列化对象。
     """
-    status: str
+    code: int
     message: str
-    data: Optional[dict[str, Any]] = None
+    data: Optional[Any] = None

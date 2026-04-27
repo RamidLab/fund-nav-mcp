@@ -1,5 +1,5 @@
 __all__ = [
-    'log_basic_config', 'get_logger', 'get_logging_queue', 'get_logging_level',
+    'log_basic_config', 'bind_context', 'clear_context', 'get_logger', 'get_logging_queue', 'get_logging_level',
     'init_child_logging', 'LogLevel', 'Color'
 ]
 

@@ -1,0 +1,1423 @@
+__all__ = [
+    "cond", "check_result", "get_all_config", "get_render_info",
+    "add_database", "add_cache",
+    "update_database", "update_cache",
+    "delete_database", "delete_cache",
+    "switch_default_db_config", "switch_default_cache_config",
+    "db_test_connection", "cache_test_connection",
+    "config_tools_app"
+]
+
+from typing import Any, List, Counter, Tuple
+
+from fastmcp import FastMCPApp
+from fund_nav_mcp.config import get_settings, MCPSettings
+from fund_nav_mcp.models.common import UtilResponse
+from fund_nav_mcp.models.schemas import DatabaseConfig, CacheConfig
+from fund_nav_mcp.utils.enums import NodeStatus, Errcode
+from fund_nav_mcp.utils.log import get_logger
+from prefab_ui.actions import SetState, CloseOverlay, ShowToast
+from prefab_ui.actions.mcp import CallTool
+from prefab_ui.app import PrefabApp
+from prefab_ui.components import (
+    Card, CardContent, CardHeader, CardTitle,
+    Dashboard, DashboardItem,
+    H2, Muted, H1, DataTable,
+    DataTableColumn, Button, Row, Dialog, Div, Form, Column, Label, Input, Select, SelectOption, Badge, Loader, If,
+    Container, Alert, AlertTitle, AlertDescription, Popover, Text, )
+from prefab_ui.rx import RESULT, Rx, EVENT, ERROR
+
+app = FastMCPApp("Config Tools")
+
+logger = get_logger(__name__)
+
+
+def cond(pairs: List[tuple[Rx, Any]], default: Any = None) -> Any:
+    """
+    构建 Rx 三元表达式链，根据条件返回对应的值
+
+    Args:
+        pairs:  条件值对列表，每个元素为 (condition, value)
+        default:  如果所有条件都不匹配的默认值
+
+    Returns:
+        匹配结果
+    """
+    expr = default
+    logger.debug(f"cond pairs: {pairs}")
+    for _cond, val in reversed(pairs):
+        expr = _cond.then(val, expr)
+    return expr
+
+
+def check_result(result: UtilResponse) -> UtilResponse:
+    """
+    检查结果是否成功
+
+    Args:
+        result: API 调用结果
+
+    Returns:
+        通用响应
+    """
+    if result.code not in {Errcode.SUCCESS, Errcode.DONE, Errcode.CONTINUE, Errcode.PROCESS}:
+        logger.debug(result)
+        raise Exception(result.message)
+    return result
+
+
+@app.tool()
+def get_all_config() -> MCPSettings:
+    """
+    获取所有配置
+
+    Returns:
+        所有配置
+    """
+    return get_settings()
+
+
+from collections import Counter
+from typing import Dict, Any
+
+
+@app.tool()
+def get_render_info() -> Dict[str, Any]:
+    """
+    获取渲染信息，包括数据库和缓存的状态汇总及详细列表。
+    """
+    settings = get_settings()
+
+    def prepare_config_list(
+            configs: Dict[str, DatabaseConfig | CacheConfig], name_key: str
+    ) -> Tuple[List[Dict[str, Any]], Counter[NodeStatus]]:
+        """
+        处理数据库或缓存的配置列表，返回数据列表和状态计数器
+
+        Args:
+            configs: 配置字典，键为配置名称，值为配置对象
+            name_key: 配置名称键名，默认 "db_name" 或 "cache_name"
+
+        Returns:
+            数据列表和状态计数器
+        """
+        data = []
+        statuses = []
+        for name, cfg in configs.items():
+            item = {
+                **cfg.model_dump(),
+                name_key: name,
+                "status_component": cfg.status.component,
+                **({"db_sql_echo_text": "是" if cfg.db_sql_echo == "open" else "否"}
+                   if "db_sql_echo" in cfg.model_fields else {}),
+            }
+            data.append(item)
+            statuses.append(item.get("status"))
+        return data, Counter(statuses)
+
+    def _calc_counts(statuses: Counter[NodeStatus], prefix: str) -> Dict[str, Any]:
+        """
+        根据状态列表计算各类计数，并以 prefix 作为键前缀
+
+        Args:
+            statuses: 状态计数器
+            prefix: 键前缀
+
+        Returns:
+            包含各类计数的字典
+        """
+        counter = Counter(statuses)
+        online = counter.get(NodeStatus.Active, 0)
+        offline = counter.get(NodeStatus.Inactive, 0)
+        deactivate = counter.get(NodeStatus.Deactivate, 0)
+        error = counter.get(NodeStatus.Error, 0)
+        unknown = counter.get(NodeStatus.Unknown, 0)
+        total = counter.total() - deactivate - error - unknown
+        return {
+            f"{prefix}_online_count": online,
+            f"{prefix}_offline_count": offline,
+            f"{prefix}_deactivate_count": deactivate,
+            f"{prefix}_error_count": error,
+            f"{prefix}_unknown_count": unknown,
+            f"{prefix}_total_count": total,
+        }
+
+    # 处理数据库
+    db_data, db_statuses = prepare_config_list(settings.databases, "db_name")
+    # 处理缓存
+    cache_data, cache_statuses = prepare_config_list(settings.caches, "cache_name")
+
+    return {
+        **{"db_list": db_data},
+        **_calc_counts(db_statuses, "db"),
+        **{"cache_list": cache_data},
+        **_calc_counts(cache_statuses, "cache"),
+    }
+
+
+@app.tool()
+def add_database(db_name: str, db_config: Dict[str, Any]) -> UtilResponse:
+    """
+    添加数据库配置
+
+    Args:
+        db_name: 数据库名称
+        db_config: 数据库配置字典
+
+    Returns:
+        通用响应
+    """
+    settings = get_settings()
+    db_config = DatabaseConfig.model_validate(db_config)
+    result = settings.add_database(db_name, db_config)
+    settings.store()
+    return check_result(result)
+
+
+@app.tool()
+def add_cache(cache_name: str, cache_config: Dict[str, Any]) -> UtilResponse:
+    """
+    添加缓存配置
+
+    Args:
+        cache_name: 缓存名称
+        cache_config: 缓存配置字典
+
+    Returns:
+        通用响应
+    """
+    settings = get_settings()
+    cache_config = CacheConfig.model_validate(cache_config)
+    result = settings.add_cache(cache_name, cache_config)
+    settings.store()
+    return check_result(result)
+
+
+@app.tool()
+def update_database(db_name: str, db_config: Dict[str, Any]) -> UtilResponse:
+    """
+    更新数据库配置
+
+    Args:
+        db_name: 数据库名称
+        db_config: 数据库配置字典
+
+    Returns:
+        通用响应
+    """
+    settings = get_settings()
+    db_config["status"] = db_config.get("status", NodeStatus.Unknown)
+    new_db_name = db_config["db_name"]
+    db_config = DatabaseConfig.model_validate(db_config)
+    result = settings.update_database(db_name, db_config, new_db_name=new_db_name if db_name != new_db_name else None)
+    settings.store()
+    return check_result(result)
+
+
+@app.tool()
+def update_cache(cache_name: str, cache_config: Dict[str, Any]) -> UtilResponse:
+    """
+    更新缓存配置
+
+    Args:
+        cache_name: 缓存名称
+        cache_config: 缓存配置字典
+
+    Returns:
+        通用响应
+    """
+    settings = get_settings()
+    cache_config["status"] = cache_config.get("status", NodeStatus.Unknown)
+    new_cache_name = cache_config["cache_name"]
+    cache_config = CacheConfig.model_validate(cache_config)
+    result = settings.update_cache(
+        cache_name, cache_config,
+        new_cache_name=new_cache_name if cache_name != new_cache_name else None
+    )
+    settings.store()
+    return check_result(result)
+
+
+@app.tool()
+def delete_database(db_name: str) -> UtilResponse:
+    """
+    删除数据库配置
+
+    Args:
+        db_name: 数据库名称
+
+    Returns:
+        通用响应
+    """
+    settings = get_settings()
+    result = settings.delete_database(db_name)
+    settings.store()
+    return check_result(result)
+
+
+@app.tool()
+def delete_cache(cache_name: str) -> UtilResponse:
+    """
+    删除缓存配置
+
+    Args:
+        cache_name: 缓存名称
+
+    Returns:
+        通用响应
+    """
+    settings = get_settings()
+    result = settings.delete_cache(cache_name)
+    settings.store()
+    return check_result(result)
+
+
+@app.tool()
+def switch_default_db_config(db_type: str) -> Dict[str, Any]:
+    """
+    切换默认数据库配置
+
+    Args:
+        db_type: 数据库类型
+
+    Returns:
+        数据库配置字典
+    """
+    if db_type == "sqlite":
+        return {
+            "db_host": "memory",
+            "db_port": 0,
+            "db_username": "",
+            "db_password": "",
+            "status": NodeStatus.Unknown,
+        }
+    elif db_type == "mysql":
+        return {
+            "db_host": "127.0.0.1",
+            "db_port": 3306,
+            "db_username": "",
+            "db_password": "",
+            "status": NodeStatus.Unknown,
+        }
+    elif db_type == "postgresql":
+        return {
+            "db_host": "127.0.0.1",
+            "db_port": 5432,
+            "db_username": "",
+            "db_password": "",
+            "status": NodeStatus.Unknown,
+        }
+    elif db_type == "influxdb":
+        return {
+            "db_host": "127.0.0.1",
+            "db_port": 8086,
+            "db_username": "",
+            "db_password": "",
+            "status": NodeStatus.Unknown,
+        }
+    else:
+        return {
+            "db_host": "",
+            "db_port": 0,
+            "db_username": "",
+            "db_password": "",
+            "status": NodeStatus.Unknown,
+        }
+
+
+@app.tool()
+def switch_default_cache_config(cache_type: str) -> Dict[str, Any]:
+    """
+    切换默认缓存配置
+
+    Args:
+        cache_type: 缓存类型
+
+    Returns:
+        缓存配置字典
+    """
+    if cache_type == "redis":
+        return {
+            "cache_host": "127.0.0.1",
+            "cache_port": 6379,
+            "cache_pass": "",
+            "status": NodeStatus.Unknown,
+        }
+    else:
+        return {
+            "cache_host": "",
+            "cache_port": 0,
+            "cache_pass": "",
+            "status": NodeStatus.Unknown,
+        }
+
+
+@app.tool()
+def db_test_connection(db_config: Dict[str, Any]) -> UtilResponse:
+    """
+    测试数据库连接
+
+    Args:
+        db_config: 数据库配置字典
+
+    Returns:
+        通用响应
+    """
+    settings = get_settings()
+    db_config = DatabaseConfig.model_validate(db_config)
+    result = settings.db_test_connection(db_config)
+    return result
+
+
+@app.tool()
+def cache_test_connection(cache_config: Dict[str, Any]) -> UtilResponse:
+    """
+    测试缓存连接
+
+    Args:
+        cache_config: 缓存配置字典
+
+    Returns:
+        通用响应
+    """
+    settings = get_settings()
+    cache_config = CacheConfig.model_validate(cache_config)
+    result = settings.cache_test_connection(cache_config)
+    return result
+
+
+@app.ui()
+def config_tools_app() -> PrefabApp:
+    """
+    配置工具应用
+
+    Returns:
+        PrefabApp 应用实例
+    """
+    with Dashboard(columns=12, row_height="auto", gap=4) as dashboard:  # type: ignore
+        with Dialog(title="添加数据库", name="add_db_dialog", css_class="fixed inset-0 bg-black/50"):  # type: ignore
+            Div()
+            with Form():
+                with If(Rx("dialog_loading")):
+                    with Container(
+                            css_class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"):  # type: ignore
+                        Loader(size="lg")
+                with Column(gap=2):
+                    Label("数据库类型")
+                    with Select(placeholder="选择数据库类型...", name="db_add_args.db_type", onChange=[
+                        SetState("db_add_args.db_type", EVENT),
+                        SetState("db_connect_result", ""),
+                        CallTool(
+                            "switch_default_db_config",
+                            arguments={"db_type": Rx("db_add_args.db_type")},
+                            on_success=[
+                                SetState("db_add_args.db_host", RESULT["db_host"]),
+                                SetState("db_add_args.db_port", RESULT["db_port"]),
+                                SetState("db_add_args.status", RESULT["status"]),
+                            ]
+                        ),
+                    ]):
+                        SelectOption(value="sqlite", label="SQLite", selected=True)
+                        SelectOption(value="mysql", label="Mysql")
+                        SelectOption(value="postgresql", label="Postgresql")
+                        SelectOption(value="influxdb", label="InfluxDB")
+                with Column(gap=2):
+                    Label("数据库名称")
+                    Input(name="db_add_args.db_name", placeholder="如：mysql-default", required=True)
+                with Row(gap=2):
+                    with Column(gap=2):
+                        Label("数据库地址")
+                        Input(
+                            name="db_add_args.db_host",
+                            placeholder="如：127.0.0.1",
+                            required=True,
+                        )
+                    with If(Rx("db_add_args.db_type") != "sqlite"):
+                        with Column(gap=2):
+                            Label("数据库端口")
+                            Input(
+                                name="db_add_args.db_port",
+                                placeholder="如：3306",
+                                inputType="number",
+                            )
+                        with Column(gap=2):
+                            Label("数据库用户名")
+                            Input(name="db_add_args.db_username", placeholder="如：root")
+                        with Column(gap=2):
+                            Label("数据库密码")
+                            Input(name="db_add_args.db_password", placeholder="如：123456", inputType="password")
+                with Column(gap=2):
+                    Label("连接池大小")
+                    Input(name="db_add_args.db_pool_size", placeholder="如：5", inputType="number")
+                with Column(gap=2):
+                    Label("SQL 打印")
+                    with Select(name="db_add_args.db_sql_echo", placeholder="选择是否打印 SQL 语句"):
+                        SelectOption(value="open", label="是")
+                        SelectOption(value="close", label="否", selected=True)
+                with Column(gap=2):
+                    _status_pairs = [(Rx("db_add_args.status") == member.value, member) for member in NodeStatus]
+                    status = cond(_status_pairs, default=NodeStatus.Unknown)
+                    status_variant = cond(
+                        [(cond_expr, member.label) for cond_expr, member in _status_pairs],
+                        default=NodeStatus.Unknown.label,
+                    )
+
+                    with Row(gap=2, css_class="items-center"):  # type: ignore
+                        Label(f"数据库状态：")
+                        Badge(status, variant=status_variant)
+                    with If(Rx("db_connect_result") != ""):
+                        with If(Rx("db_add_args.status") == NodeStatus.Active):
+                            with Alert(variant="success", icon="circle-check"):
+                                AlertTitle("连接成功")
+                        with If(Rx("db_add_args.status") == NodeStatus.Inactive):
+                            with Alert(icon="circle-alert"):
+                                AlertTitle("连接失败")
+                                AlertDescription(str(Rx("db_connect_result")))
+                        with If(Rx("db_add_args.status") == NodeStatus.AuthFailed):
+                            with Alert(icon="circle-alert"):
+                                AlertTitle("认证失败")
+                                AlertDescription(str(Rx("db_connect_result")))
+                        with If(Rx("db_add_args.status") == NodeStatus.Error):
+                            with Alert(variant="destructive", icon="circle-x"):
+                                AlertTitle("错误信息")
+                                AlertDescription(str(Rx("db_connect_result")))
+
+                    with If(Rx("db_add_error") != ""):
+                        with Alert(variant="destructive", icon="circle-x"):
+                            AlertTitle("错误信息")
+                            AlertDescription(str(Rx("db_add_error")))
+
+                with Row(gap=2, css_class="justify-end"):  # type: ignore
+                    Button(
+                        "测试", variant="outline", button_type="button",
+                        on_click=
+                        [
+                            SetState("dialog_loading", True),
+                            CallTool(
+                                "db_test_connection",
+                                arguments={"db_config": Rx("db_add_args")},
+                                on_success=[
+                                    SetState("db_connect_result", RESULT.message),
+                                    SetState("db_add_args.status", RESULT.data.status),
+                                    SetState("dialog_loading", False),
+                                ],
+                                on_error=[
+                                    SetState("db_connect_result", ERROR),
+                                    SetState("db_add_args.status", NodeStatus.Error),
+                                    ShowToast(f"数据库连接失败", variant="error"),
+                                    SetState("dialog_loading", False),
+                                ],
+                            ),
+                        ]),
+
+                    Button("添加", variant="outline", button_type="button", on_click=[  # type: ignore
+                        SetState("dialog_loading", True),
+                        CallTool(
+                            "add_database",
+                            arguments={
+                                "db_name": Rx("db_add_args.db_name"),
+                                "db_config": Rx("db_add_args")
+                            },
+                            on_success=[
+                                SetState("db_add_error", ""),
+                                SetState("db_add_args.db_name", ""),
+                                SetState("db_add_args", DatabaseConfig().model_dump()),
+                                CallTool("get_render_info", on_success=[
+                                    SetState("render_info.db_list", RESULT["db_list"]),
+                                    SetState("render_info.db_online_count", RESULT["db_online_count"]),
+                                    SetState("render_info.db_offline_count", RESULT["db_offline_count"]),
+                                    SetState("render_info.db_deactivate_count", RESULT["db_deactivate_count"]),
+                                    SetState("render_info.db_error_count", RESULT["db_error_count"]),
+                                ]),
+                                SetState("dialog_loading", False),
+                                ShowToast("数据库添加成功"),
+                                CloseOverlay(),
+                            ],
+                            on_error=[
+                                SetState("db_add_error", ERROR),
+                                SetState("dialog_loading", False),
+                                ShowToast("数据库添加失败"),
+                            ],
+                        )
+                    ]),
+                    Button("取消", variant="destructive", on_click=[
+                        CloseOverlay(),
+                        SetState("db_connect_result", ""),
+                        SetState("db_add_args.db_name", ""),
+                        SetState("db_add_args", DatabaseConfig().model_dump()),
+                    ], button_type="button")
+
+        with Dialog(title="编辑数据库", name="edit_db_dialog",
+                    css_class="fixed inset-0 bg-black/50"):  # type: ignore
+            Div()
+            with Form():
+                with If(Rx("dialog_loading")):
+                    with Container(
+                            css_class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"):  # type: ignore
+                        Loader(size="lg")
+                with Column(gap=2):
+                    Label("数据库类型")
+                    with Select(placeholder="选择数据库类型...", name="db_edit_args.db_type", onChange=[
+                        SetState("db_edit_args.db_type", EVENT),
+                        SetState("db_connect_result", ""),
+                        CallTool(
+                            "switch_default_db_config",
+                            arguments={"db_type": Rx("db_edit_args.db_type")},
+                            on_success=[
+                                SetState("db_edit_args.db_host", RESULT["db_host"]),
+                                SetState("db_edit_args.db_port", RESULT["db_port"]),
+                                SetState("db_edit_args.db_pool_size", RESULT["db_pool_size"]),
+                                SetState("db_edit_args.db_username", RESULT["db_username"]),
+                                SetState("db_edit_args.db_password", RESULT["db_password"]),
+                            ]
+                        ),
+                    ]):
+                        SelectOption(value="sqlite", label="SQLite")
+                        SelectOption(value="mysql", label="Mysql")
+                        SelectOption(value="postgresql", label="Postgresql")
+                        SelectOption(value="influxdb", label="InfluxDB")
+                with Column(gap=2):
+                    Label("数据库名称")
+                    Input(
+                        name="db_edit_args.db_name",
+                        placeholder="如：mysql-default",
+                        required=True
+                    )
+                with Row(gap=2):
+                    with Column(gap=2):
+                        Label("数据库地址")
+                        Input(
+                            name="db_edit_args.db_host",
+                            placeholder="如：127.0.0.1",
+                            required=True,
+                        )
+                    with If(Rx("db_edit_args.db_type") != "sqlite"):
+                        with Column(gap=2):
+                            Label("数据库端口")
+                            Input(
+                                name="db_edit_args.db_port",
+                                placeholder="如：3306",
+                                inputType="number",
+                            )
+                        with Column(gap=2):
+                            Label("数据库用户名")
+                            Input(
+                                name="db_edit_args.db_username",
+                                placeholder="如：root"
+                            )
+                        with Column(gap=2):
+                            Label("数据库密码")
+                            Input(
+                                name="db_edit_args.db_password",
+                                placeholder="如：123456",
+                                inputType="password",
+                            )
+                with Column(gap=2):
+                    Label("连接池大小")
+                    Input(
+                        name="db_edit_args.db_pool_size",
+                        placeholder="如：5",
+                        inputType="number",
+                    )
+                with Column(gap=2):
+                    Label("SQL 打印")
+                    with Select(
+                            name="db_edit_args.db_sql_echo",
+                            onChange=[
+                                SetState("db_edit_args.db_sql_echo", EVENT),
+                            ]
+                    ):
+                        SelectOption(value="open", label="是")
+                        SelectOption(value="close", label="否")
+                with Column(gap=2):
+                    _status_pairs = [(Rx("db_edit_args.status") == member.value, member) for member in
+                                     NodeStatus]
+                    status = cond(_status_pairs, default=NodeStatus.Unknown)
+                    status_variant = cond(
+                        [(cond_expr, member.label) for cond_expr, member in _status_pairs],
+                        default=NodeStatus.Unknown.label,
+                    )
+
+                    with Row(gap=2, css_class="items-center"):  # type: ignore
+                        Label(f"数据库状态：")
+                        Badge(status, variant=status_variant)
+                    with If(Rx("db_connect_result") != ""):
+                        with If(Rx("db_edit_args.status") == NodeStatus.Active):
+                            with Alert(variant="success", icon="circle-check"):
+                                AlertTitle("连接成功")
+                        with If(Rx("db_edit_args.status") == NodeStatus.Inactive):
+                            with Alert(icon="circle-alert"):
+                                AlertTitle("连接失败")
+                                AlertDescription(str(Rx("db_connect_result")))
+                        with If(Rx("db_edit_args.status") == NodeStatus.AuthFailed):
+                            with Alert(icon="circle-alert"):
+                                AlertTitle("认证失败")
+                                AlertDescription(str(Rx("db_connect_result")))
+                        with If(Rx("db_edit_args.status") == NodeStatus.Error):
+                            with Alert(variant="destructive", icon="circle-x"):
+                                AlertTitle("错误信息")
+                                AlertDescription(str(Rx("db_connect_result")))
+
+                    with If(Rx("db_edit_error") != ""):
+                        with Alert(variant="destructive", icon="circle-x"):
+                            AlertTitle("错误信息")
+                            AlertDescription(str(Rx("db_edit_error")))
+
+                with Row(gap=2, css_class="justify-end"):  # type: ignore
+                    Button(
+                        "测试", variant="outline", button_type="button",
+                        on_click=
+                        [
+                            SetState("dialog_loading", True),
+                            CallTool(
+                                "db_test_connection",
+                                arguments={"db_config": Rx("db_edit_args")},
+                                on_success=[
+                                    SetState("db_connect_result", RESULT.message),
+                                    SetState("db_edit_args.status", RESULT.data.status),
+                                    SetState("dialog_loading", False),
+                                ],
+                                on_error=[
+                                    SetState("db_connect_result", ERROR),
+                                    SetState("db_edit_args.status", NodeStatus.Error),
+                                    ShowToast(f"数据库连接失败", variant="error"),
+                                    SetState("dialog_loading", False),
+                                ],
+                            ),
+                        ]),
+
+                    Button("保存", variant="outline", button_type="submit", on_click=[  # type: ignore
+                        SetState("dialog_loading", True),
+                        CallTool(
+                            "update_database",
+                            arguments={
+                                "db_name": Rx("db_edit_args.db_old_name"),
+                                "db_config": Rx("db_edit_args"),
+                            },
+                            on_success=[
+                                SetState("db_edit_error", ""),
+                                SetState("db_edit_args", {}),
+                                CallTool("get_render_info", on_success=[
+                                    SetState("render_info.db_list", RESULT["db_list"]),
+                                    SetState("render_info.db_online_count", RESULT["db_online_count"]),
+                                    SetState("render_info.db_offline_count", RESULT["db_offline_count"]),
+                                    SetState("render_info.db_deactivate_count", RESULT["db_deactivate_count"]),
+                                    SetState("render_info.db_error_count", RESULT["db_error_count"]),
+                                ]),
+                                SetState("dialog_loading", False),
+                                ShowToast("数据库更新成功"),
+                                SetState("edit_db_dialog", False),
+                                CloseOverlay(),
+                            ],
+                            on_error=[
+                                SetState("db_edit_error", ERROR),
+                                SetState("dialog_loading", False),
+                                ShowToast("数据库更新失败"),
+                            ],
+                        )
+                    ]),
+                    with Popover():
+                        Button("停用", variant="outline", button_type="button")
+                        with Column(gap=2):
+                            Text("是否确认停用并保存当前修改？")
+                            Button(
+                                "确认",
+                                on_click=[
+                                    SetState("db_edit_args.status", NodeStatus.Deactivate),
+                                    SetState("dialog_loading", True),
+                                    CallTool(
+                                        "update_database",
+                                        arguments={
+                                            "db_name": Rx("db_edit_args.db_old_name"),
+                                            "db_config": Rx("db_edit_args"),
+                                        },
+                                        on_success=[
+                                            SetState("db_edit_error", ""),
+                                            SetState("db_edit_args", {}),
+                                            CallTool("get_render_info", on_success=[
+                                                SetState("render_info.db_list", RESULT["db_list"]),
+                                                SetState("render_info.db_online_count", RESULT["db_online_count"]),
+                                                SetState("render_info.db_offline_count", RESULT["db_offline_count"]),
+                                                SetState("render_info.db_deactivate_count",
+                                                         RESULT["db_deactivate_count"]),
+                                                SetState("render_info.db_error_count", RESULT["db_error_count"]),
+                                            ]),
+                                            SetState("dialog_loading", False),
+                                            ShowToast("数据库停用成功"),
+                                            CloseOverlay(),
+                                            SetState("edit_db_dialog", False),
+                                        ],
+                                        on_error=[
+                                            SetState("db_edit_error", ERROR),
+                                            SetState("dialog_loading", False),
+                                            ShowToast("数据库停用失败"),
+                                        ],
+                                    )
+                                ]
+                            )
+                    with Popover():
+                        Button("删除", variant="outline", button_type="button")
+                        with Column(gap=2):
+                            Text("是否确认删除该数据库？仅删除数据库配置，不删除数据库文件。")
+                            Button(
+                                "确认",
+                                on_click=[
+                                    SetState("dialog_loading", True),
+                                    CallTool(
+                                        "delete_database",
+                                        arguments={"db_name": Rx("db_edit_args.db_old_name")},
+                                        on_success=[
+                                            SetState("db_edit_error", ""),
+                                            SetState("db_edit_args", {}),
+                                            CallTool("get_render_info", on_success=[
+                                                SetState("render_info.db_list", RESULT["db_list"]),
+                                                SetState("render_info.db_online_count", RESULT["db_online_count"]),
+                                                SetState("render_info.db_offline_count", RESULT["db_offline_count"]),
+                                                SetState("render_info.db_deactivate_count",
+                                                         RESULT["db_deactivate_count"]),
+                                                SetState("render_info.db_error_count", RESULT["db_error_count"]),
+                                            ]),
+                                            SetState("dialog_loading", False),
+                                            ShowToast("数据库删除成功"),
+                                            CloseOverlay(),
+                                            SetState("edit_db_dialog", False),
+                                        ],
+                                        on_error=[
+                                            SetState("db_edit_error", ERROR),
+                                            SetState("dialog_loading", False),
+                                            ShowToast("数据库删除失败"),
+                                        ],
+                                    )
+                                ]
+                            )
+                    Button("取消", variant="destructive", on_click=[
+                        CloseOverlay(),
+                        SetState("db_connect_result", ""),
+                        SetState("db_edit_args", {}),
+                    ], button_type="button")
+
+        with Dialog(title="添加缓存", name="add_cache_dialog", css_class="fixed inset-0 bg-black/50"):  # type: ignore
+            Div()
+            with Form():
+                with If(Rx("dialog_loading")):
+                    with Container(
+                            css_class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"):  # type: ignore
+                        Loader(size="lg")
+                with Column(gap=2):
+                    Label("数据库类型")
+                    with Select(disabled=True, placeholder="选择数据库类型...", name="cache_add_args.cache_type",
+                                onChange=[
+                                    SetState("cache_add_args.cache_type", EVENT),
+                                    SetState("cache_connect_result", ""),
+                                    CallTool(
+                                        "switch_default_cache_config",
+                                        arguments={"cache_type": Rx("cache_add_args.cache_type")},
+                                        on_success=[
+                                            SetState("cache_add_args.cache_host", RESULT["cache_host"]),
+                                            SetState("cache_add_args.cache_port", RESULT["cache_port"]),
+                                            SetState("cache_add_args.cache_pass", RESULT["cache_pass"]),
+                                            SetState("cache_add_args.status", RESULT["status"]),
+                                        ]
+                                    ),
+                                ]):
+                        SelectOption(value="redis", label="Redis", selected=True)
+                with Column(gap=2):
+                    Label("数据库名称")
+                    Input(name="cache_add_args.cache_name", placeholder="如：redis-default", required=True)
+                with Row(gap=2):
+                    with Column(gap=2):
+                        Label("缓存主机地址")
+                        Input(
+                            name="cache_add_args.cache_host",
+                            placeholder="如：127.0.0.1",
+                            required=True,
+                        )
+                    with Column(gap=2):
+                        Label("缓存端口")
+                        Input(
+                            name="cache_add_args.cache_port",
+                            placeholder="如：6339",
+                            inputType="number",
+                        )
+                    with Column(gap=2):
+                        Label("缓存密码")
+                        Input(name="cache_add_args.cache_pass", placeholder="如：123456", inputType="password")
+                with Row(gap=2):
+                    with Column(gap=2):
+                        Label("超时时间")
+                        Input(name="cache_add_args.timeout", placeholder="如：5", inputType="number")
+                    with Column(gap=2):
+                        Label("缓存过期时间（秒）")
+                        Input(name="cache_add_args.ttl_seconds", placeholder="如：300", inputType="number")
+                    with Column(gap=2):
+                        Label("缓存最大大小（MB）")
+                        Input(name="cache_add_args.max_size", placeholder="如：1024", inputType="number")
+                with Row(gap=2):
+                    with Column(gap=2):
+                        Label("数据库数量")
+                        Input(name="cache_add_args.databases", placeholder="如：16", inputType="number", required=True)
+                    with Column(gap=2):
+                        Label("主数据库索引")
+                        Input(name="cache_add_args.main_db", placeholder="如：0", inputType="number", required=True)
+                    with Column(gap=2):
+                        Label("连接池大小")
+                        Input(name="cache_add_args.cache_pool_size", placeholder="如：5", inputType="number",
+                              required=True)
+                with Column(gap=2):
+                    Label("键前缀")
+                    Input(name="cache_add_args.key_prefix", placeholder="如：key")
+
+                with Column(gap=2):
+                    _status_pairs = [(Rx("cache_add_args.status") == member.value, member) for member in NodeStatus]
+                    status = cond(_status_pairs, default=NodeStatus.Unknown)
+                    status_variant = cond(
+                        [(cond_expr, member.label) for cond_expr, member in _status_pairs],
+                        default=NodeStatus.Unknown.label,
+                    )
+
+                    with Row(gap=2, css_class="items-center"):  # type: ignore
+                        Label(f"数据库状态：")
+                        Badge(status, variant=status_variant)
+                    with If(Rx("cache_connect_result") != ""):
+                        with If(Rx("cache_add_args.status") == NodeStatus.Active):
+                            with Alert(variant="success", icon="circle-check"):
+                                AlertTitle("连接成功")
+                        with If(Rx("cache_add_args.status") == NodeStatus.Inactive):
+                            with Alert(icon="circle-alert"):
+                                AlertTitle("连接失败")
+                                AlertDescription(str(Rx("cache_connect_result")))
+                        with If(Rx("cache_add_args.status") == NodeStatus.AuthFailed):
+                            with Alert(icon="circle-alert"):
+                                AlertTitle("认证失败")
+                                AlertDescription(str(Rx("cache_connect_result")))
+                        with If(Rx("cache_add_args.status") == NodeStatus.Error):
+                            with Alert(variant="destructive", icon="circle-x"):
+                                AlertTitle("错误信息")
+                                AlertDescription(str(Rx("cache_connect_result")))
+
+                    with If(Rx("cache_add_error") != ""):
+                        with Alert(variant="destructive", icon="circle-x"):
+                            AlertTitle("错误信息")
+                            AlertDescription(str(Rx("cache_add_error")))
+
+                with Row(gap=2, css_class="justify-end"):  # type: ignore
+                    Button(
+                        "测试", variant="outline", button_type="button",
+                        on_click=
+                        [
+                            SetState("dialog_loading", True),
+                            CallTool(
+                                "cache_test_connection",
+                                arguments={"cache_config": Rx("cache_add_args")},
+                                on_success=[
+                                    SetState("cache_connect_result", RESULT.message),
+                                    SetState("cache_add_args.status", RESULT.data.status),
+                                    SetState("dialog_loading", False),
+                                ],
+                                on_error=[
+                                    SetState("cache_connect_result", ERROR),
+                                    SetState("cache_add_args.status", NodeStatus.Error),
+                                    ShowToast(f"缓存连接失败", variant="error"),
+                                    SetState("dialog_loading", False),
+                                ],
+                            ),
+                        ]),
+
+                    Button("添加", variant="outline", button_type="button", on_click=[  # type: ignore
+                        SetState("dialog_loading", True),
+                        CallTool(
+                            "add_cache",
+                            arguments={
+                                "cache_name": Rx("cache_add_args.cache_name"),
+                                "cache_config": Rx("cache_add_args")
+                            },
+                            on_success=[
+                                SetState("cache_add_error", ""),
+                                SetState("cache_add_args.cache_name", ""),
+                                SetState("cache_add_args", CacheConfig().model_dump()),
+                                CallTool("get_render_info", on_success=[
+                                    SetState("render_info.cache_list", RESULT["cache_list"]),
+                                    SetState("render_info.cache_online_count", RESULT["cache_online_count"]),
+                                    SetState("render_info.cache_offline_count", RESULT["cache_offline_count"]),
+                                    SetState("render_info.cache_deactivate_count", RESULT["cache_deactivate_count"]),
+                                    SetState("render_info.cache_error_count", RESULT["cache_error_count"]),
+                                ]),
+                                SetState("dialog_loading", False),
+                                ShowToast("数据库添加成功"),
+                                CloseOverlay(),
+                            ],
+                            on_error=[
+                                SetState("cache_add_error", ERROR),
+                                SetState("dialog_loading", False),
+                                ShowToast("数据库添加失败"),
+                            ],
+                        )
+                    ]),
+                    Button("取消", variant="destructive", on_click=[
+                        CloseOverlay(),
+                        SetState("cache_connect_result", ""),
+                        SetState("cache_add_args.cache_name", ""),
+                        SetState("cache_add_args", CacheConfig().model_dump()),
+                    ], button_type="button")
+
+        with Dialog(title="编辑缓存", name="edit_cache_dialog",
+                    css_class="fixed inset-0 bg-black/50"):  # type: ignore
+            Div()
+            with Form():
+                with If(Rx("dialog_loading")):
+                    with Container(
+                            css_class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"):  # type: ignore
+                        Loader(size="lg")
+                with Column(gap=2):
+                    Label("缓存类型")
+                    with Select(disabled=True, placeholder="选择缓存类型...", name="cache_edit_args.cache_type",
+                                onChange=[
+                                    SetState("cache_edit_args.cache_type", EVENT),
+                                    SetState("cache_connect_result", ""),
+                                    CallTool(
+                                        "switch_default_cache_config",
+                                        arguments={"cache_type": Rx("cache_edit_args.cache_type")},
+                                        on_success=[
+                                            SetState("cache_edit_args.cache_host", RESULT["cache_host"]),
+                                            SetState("cache_edit_args.cache_port", RESULT["cache_port"]),
+                                            SetState("cache_edit_args.cache_pass", RESULT["cache_pass"]),
+                                            SetState("cache_edit_args.status", RESULT["status"]),
+                                        ]
+                                    ),
+                                ]):
+                        SelectOption(value="redis", label="Redis", selected=True)
+                with Column(gap=2):
+                    Label("数据库名称")
+                    Input(name="cache_edit_args.cache_name", placeholder="如：redis-default", required=True)
+                with Row(gap=2):
+                    with Column(gap=2):
+                        Label("缓存主机地址")
+                        Input(
+                            name="cache_edit_args.cache_host",
+                            placeholder="如：127.0.0.1",
+                            required=True,
+                        )
+                    with Column(gap=2):
+                        Label("缓存端口")
+                        Input(
+                            name="cache_edit_args.cache_port",
+                            placeholder="如：6339",
+                            inputType="number",
+                        )
+                    with Column(gap=2):
+                        Label("缓存密码")
+                        Input(name="cache_edit_args.cache_pass", placeholder="如：123456")
+                with Row(gap=2):
+                    with Column(gap=2):
+                        Label("超时时间")
+                        Input(name="cache_edit_args.timeout", placeholder="如：5", inputType="number")
+                    with Column(gap=2):
+                        Label("缓存过期时间（秒）")
+                        Input(name="cache_edit_args.ttl_seconds", placeholder="如：300", inputType="number")
+                    with Column(gap=2):
+                        Label("缓存最大大小（MB）")
+                        Input(name="cache_edit_args.max_size", placeholder="如：1024", inputType="number")
+                with Row(gap=2):
+                    with Column(gap=2):
+                        Label("数据库数量")
+                        Input(name="cache_edit_args.databases", placeholder="如：16", inputType="number", required=True)
+                    with Column(gap=2):
+                        Label("主数据库索引")
+                        Input(name="cache_edit_args.main_db", placeholder="如：0", inputType="number", required=True)
+                    with Column(gap=2):
+                        Label("连接池大小")
+                        Input(name="cache_edit_args.cache_pool_size", placeholder="如：5", inputType="number",
+                              required=True)
+                with Column(gap=2):
+                    Label("键前缀")
+                    Input(name="cache_edit_args.key_prefix", placeholder="如：key")
+
+                with Column(gap=2):
+                    _status_pairs = [(Rx("cache_edit_args.status") == member.value, member) for member in NodeStatus]
+                    status = cond(_status_pairs, default=NodeStatus.Unknown)
+                    status_variant = cond(
+                        [(cond_expr, member.label) for cond_expr, member in _status_pairs],
+                        default=NodeStatus.Unknown.label,
+                    )
+
+                    with Row(gap=2, css_class="items-center"):  # type: ignore
+                        Label(f"数据库状态：")
+                        Badge(status, variant=status_variant)
+                    with If(Rx("cache_connect_result") != ""):
+                        with If(Rx("cache_edit_args.status") == NodeStatus.Active):
+                            with Alert(variant="success", icon="circle-check"):
+                                AlertTitle("连接成功")
+                        with If(Rx("cache_edit_args.status") == NodeStatus.Inactive):
+                            with Alert(icon="circle-alert"):
+                                AlertTitle("连接失败")
+                                AlertDescription(str(Rx("cache_connect_result")))
+                        with If(Rx("cache_edit_args.status") == NodeStatus.AuthFailed):
+                            with Alert(icon="circle-alert"):
+                                AlertTitle("认证失败")
+                                AlertDescription(str(Rx("cache_connect_result")))
+                        with If(Rx("cache_edit_args.status") == NodeStatus.Error):
+                            with Alert(variant="destructive", icon="circle-x"):
+                                AlertTitle("错误信息")
+                                AlertDescription(str(Rx("cache_connect_result")))
+
+                    with If(Rx("cache_edit_error") != ""):
+                        with Alert(variant="destructive", icon="circle-x"):
+                            AlertTitle("错误信息")
+                            AlertDescription(str(Rx("cache_edit_error")))
+
+                with Row(gap=2, css_class="justify-end"):  # type: ignore
+                    Button(
+                        "测试", variant="outline", button_type="button",
+                        on_click=
+                        [
+                            SetState("dialog_loading", True),
+                            CallTool(
+                                "cache_test_connection",
+                                arguments={"cache_config": Rx("cache_edit_args")},
+                                on_success=[
+                                    SetState("cache_connect_result", RESULT.message),
+                                    SetState("cache_edit_args.status", RESULT.data.status),
+                                    SetState("dialog_loading", False),
+                                ],
+                                on_error=[
+                                    SetState("cache_connect_result", ERROR),
+                                    SetState("cache_edit_args.status", NodeStatus.Error),
+                                    ShowToast(f"缓存连接失败", variant="error"),
+                                    SetState("dialog_loading", False),
+                                ],
+                            ),
+                        ]),
+
+                    Button("保存", variant="outline", button_type="submit", on_click=[  # type: ignore
+                        SetState("dialog_loading", True),
+                        CallTool(
+                            "update_cache",
+                            arguments={
+                                "cache_name": Rx("cache_edit_args.cache_old_name"),
+                                "cache_config": Rx("cache_edit_args"),
+                            },
+                            on_success=[
+                                SetState("cache_edit_error", ""),
+                                SetState("cache_edit_args", {}),
+                                CallTool("get_render_info", on_success=[
+                                    SetState("render_info.cache_list", RESULT["cache_list"]),
+                                    SetState("render_info.cache_online_count", RESULT["cache_online_count"]),
+                                    SetState("render_info.cache_offline_count", RESULT["cache_offline_count"]),
+                                    SetState("render_info.cache_deactivate_count", RESULT["cache_deactivate_count"]),
+                                    SetState("render_info.cache_error_count", RESULT["cache_error_count"]),
+                                ]),
+                                SetState("dialog_loading", False),
+                                ShowToast("缓存更新成功"),
+                                SetState("edit_cache_dialog", False),
+                                CloseOverlay(),
+                            ],
+                            on_error=[
+                                SetState("cache_edit_error", ERROR),
+                                SetState("dialog_loading", False),
+                                ShowToast("缓存更新失败"),
+                            ],
+                        )
+                    ]),
+                    with Popover():
+                        Button("停用", variant="outline", button_type="button")
+                        with Column(gap=2):
+                            Text("是否确认停用并保存当前修改？")
+                            Button(
+                                "确认",
+                                on_click=[
+                                    SetState("cache_edit_args.status", NodeStatus.Deactivate),
+                                    SetState("dialog_loading", True),
+                                    CallTool(
+                                        "update_cache",
+                                        arguments={
+                                            "cache_name": Rx("cache_edit_args.cache_old_name"),
+                                            "cache_config": Rx("cache_edit_args"),
+                                        },
+                                        on_success=[
+                                            SetState("cache_edit_error", ""),
+                                            SetState("cache_edit_args", {}),
+                                            CallTool("get_render_info", on_success=[
+                                                SetState("render_info.cache_list", RESULT["cache_list"]),
+                                                SetState("render_info.cache_online_count",
+                                                         RESULT["cache_online_count"]),
+                                                SetState("render_info.cache_offline_count",
+                                                         RESULT["cache_offline_count"]),
+                                                SetState("render_info.cache_deactivate_count",
+                                                         RESULT["cache_deactivate_count"]),
+                                                SetState("render_info.cache_error_count", RESULT["cache_error_count"]),
+                                            ]),
+                                            SetState("dialog_loading", False),
+                                            ShowToast("缓存停用成功"),
+                                            CloseOverlay(),
+                                            SetState("edit_cache_dialog", False),
+                                        ],
+                                        on_error=[
+                                            SetState("cache_edit_error", ERROR),
+                                            SetState("dialog_loading", False),
+                                            ShowToast("缓存停用失败"),
+                                        ],
+                                    )
+                                ]
+                            )
+                    with Popover():
+                        Button("删除", variant="outline", button_type="button")
+                        with Column(gap=2):
+                            Text("是否确认删除该缓存？仅删除缓存配置，不删除缓存文件。")
+                            Button(
+                                "确认",
+                                on_click=[
+                                    SetState("dialog_loading", True),
+                                    CallTool(
+                                        "delete_cache",
+                                        arguments={"cache_name": Rx("cache_edit_args.cache_old_name")},
+                                        on_success=[
+                                            SetState("cache_edit_error", ""),
+                                            SetState("cache_edit_args", {}),
+                                            CallTool("get_render_info", on_success=[
+                                                SetState("render_info.cache_list", RESULT["cache_list"]),
+                                                SetState("render_info.cache_online_count",
+                                                         RESULT["cache_online_count"]),
+                                                SetState("render_info.cache_offline_count",
+                                                         RESULT["cache_offline_count"]),
+                                                SetState("render_info.cache_deactivate_count",
+                                                         RESULT["cache_deactivate_count"]),
+                                                SetState("render_info.cache_error_count", RESULT["cache_error_count"]),
+                                            ]),
+                                            SetState("dialog_loading", False),
+                                            ShowToast("缓存删除成功"),
+                                            CloseOverlay(),
+                                            SetState("edit_cache_dialog", False),
+                                        ],
+                                        on_error=[
+                                            SetState("cache_edit_error", ERROR),
+                                            SetState("dialog_loading", False),
+                                            ShowToast("缓存删除失败"),
+                                        ],
+                                    )
+                                ]
+                            )
+                    Button("取消", variant="destructive", on_click=[
+                        CloseOverlay(),
+                        SetState("cache_connect_result", ""),
+                        SetState("cache_edit_args", {}),
+                    ], button_type="button")
+
+        with DashboardItem(col=1, row=1, col_span=12, row_span=2):  # type: ignore
+            with Card(css_class="h-full"):  # type: ignore
+                with CardHeader():
+                    H1("配置工具", css_class="text-3xl font-bold")
+                with CardContent():
+                    Muted("描述：提供MCP服务器的配置管理功能，包括数据库、缓存等。")
+
+        with DashboardItem(col=1, row=3, col_span=8, row_span=3):  # type: ignore
+            with Card(css_class="h-full"):  # type: ignore
+                with CardHeader(css_class="pb-2"):  # type: ignore
+                    with Row(css_class="justify-between"):  # type: ignore
+                        CardTitle("数据库配置")
+                        Button("添加数据库", icon="plus", on_click=SetState("add_db_dialog", True))
+                with CardContent():
+                    DataTable(
+                        columns=[
+                            DataTableColumn(key="db_name", header="数据库名称", align="center"),
+                            DataTableColumn(key="db_type", header="数据库类型", align="center"),
+                            DataTableColumn(key="db_host", header="数据库地址", align="center"),
+                            DataTableColumn(key="db_port", header="数据库端口", align="center"),
+                            DataTableColumn(key="db_username", header="数据库用户名", align="center"),
+                            DataTableColumn(key="db_sql_echo_text", header="SQL 打印", align="center"),
+                            DataTableColumn(key="db_pool_size", header="连接池数量", align="center", format="number"),
+                            DataTableColumn(key="status_component", header="数据库状态", align="center"),
+                        ],
+                        rows=Rx("render_info.db_list"),
+                        paginated=True,
+                        pageSize=5,
+                        search=True,
+                        onRowClick=[
+                            SetState("db_edit_args", {
+                                "db_old_name": EVENT.db_name,
+                                "db_name": EVENT.db_name,
+                                "db_type": EVENT.db_type,
+                                "db_host": EVENT.db_host,
+                                "db_port": EVENT.db_port,
+                                "db_username": EVENT.db_username,
+                                "db_sql_echo": EVENT.db_sql_echo,
+                                "db_pool_size": EVENT.db_pool_size,
+                                "status": EVENT.status,
+                            }),
+                            SetState("edit_db_dialog", True),
+                            SetState("db_connect_result", "")
+                        ]
+                    )
+
+        with DashboardItem(col=9, row=3, col_span=4):  # type: ignore
+            with Card(css_class="h-full"):  # type: ignore
+                with CardHeader(css_class="pb-2"):  # type: ignore
+                    Muted("在线/离线/总数据库数量")
+                with CardContent():
+                    H2(f"{Rx("render_info.db_online_count")}/{Rx("render_info.db_offline_count")}/{Rx("render_info.db_total_count")}")
+
+        with DashboardItem(col=9, row=4, col_span=4):  # type: ignore
+            with Card(css_class="h-full"):  # type: ignore
+                with CardHeader(css_class="pb-2"):  # type: ignore
+                    Muted("停用数据库数量")
+                with CardContent():
+                    H2(str(Rx("render_info.db_deactivate_count")))
+
+        with DashboardItem(col=9, row=5, col_span=4):  # type: ignore
+            with Card(css_class="h-full"):  # type: ignore
+                with CardHeader(css_class="pb-2"):  # type: ignore
+                    Muted("未知/故障数据库数量")
+                with CardContent():
+                    H2(f"{Rx("render_info.db_unknown_count")}/{Rx("render_info.db_error_count")}")
+
+        with DashboardItem(col=1, row=6, col_span=8, row_span=3):  # type: ignore
+            with Card(css_class="h-full"):  # type: ignore
+                with CardHeader(css_class="pb-2"):  # type: ignore
+                    with Row(css_class="justify-between"):  # type: ignore
+                        CardTitle("缓存配置")
+                        Button("添加缓存", icon="plus", on_click=SetState("add_cache_dialog", True))
+                with CardContent():
+                    DataTable(
+                        columns=[
+                            DataTableColumn(key="cache_name", header="缓存名称", align="center"),
+                            DataTableColumn(key="cache_host", header="缓存地址", align="center"),
+                            DataTableColumn(key="cache_port", header="缓存端口", align="center", format="number"),
+                            DataTableColumn(key="main_db", header="主数据库索引", align="center", format="number"),
+                            DataTableColumn(key="databases", header="逻辑数据库数量", align="center", format="number"),
+                            DataTableColumn(key="key_prefix", header="键前缀", align="center"),
+                            DataTableColumn(key="ttl_seconds", header="缓存过期时间（秒）", align="center",
+                                            format="number"),
+                            DataTableColumn(key="max_size", header="最大缓存大小（MB）", align="center", format="number"),
+                            DataTableColumn(key="cache_pool_size", header="连接池数量", align="center",
+                                            format="number"),
+                            DataTableColumn(key="status_component", header="缓存状态", align="center"),
+                        ],
+                        rows=Rx("render_info.cache_list"),
+                        paginated=True,
+                        pageSize=5,
+                        search=True,
+                        onRowClick=[
+                            SetState("cache_edit_args", {
+                                "cache_old_name": EVENT.cache_name,
+                                "cache_name": EVENT.cache_name,
+                                "cache_host": EVENT.cache_host,
+                                "cache_port": EVENT.cache_port,
+                                "cache_pass": EVENT.cache_pass,
+                                "timeout": EVENT.timeout,
+                                "main_db": EVENT.main_db,
+                                "databases": EVENT.databases,
+                                "key_prefix": EVENT.key_prefix,
+                                "ttl_seconds": EVENT.ttl_seconds,
+                                "max_size": EVENT.max_size,
+                                "cache_pool_size": EVENT.cache_pool_size,
+                                "status": EVENT.status,
+                                "cache_type": EVENT.cache_type,
+                            }),
+                            SetState("edit_cache_dialog", True),
+                            SetState("db_connect_result", "")
+                        ]
+                    )
+
+        with DashboardItem(col=9, row=6, col_span=4):  # type: ignore
+            with Card(css_class="h-full"):  # type: ignore
+                with CardHeader(css_class="pb-2"):  # type: ignore
+                    Muted("在线/离线/总缓存数量")
+                with CardContent():
+                    H2(f"{Rx("render_info.cache_online_count")}/{Rx("render_info.cache_offline_count")}/{Rx("render_info.cache_total_count")}")
+
+        with DashboardItem(col=9, row=7, col_span=4):  # type: ignore
+            with Card(css_class="h-full"):  # type: ignore
+                with CardHeader(css_class="pb-2"):  # type: ignore
+                    Muted("停用缓存数量")
+                with CardContent():
+                    H2(str(Rx("render_info.cache_deactivate_count")))
+
+        with DashboardItem(col=9, row=8, col_span=4):  # type: ignore
+            with Card(css_class="h-full"):  # type: ignore
+                with CardHeader(css_class="pb-2"):  # type: ignore
+                    Muted("未知/故障缓存数量")
+                with CardContent():
+                    H2(f"{Rx("render_info.cache_unknown_count")}/{Rx("render_info.cache_error_count")}")
+
+    return PrefabApp(
+        view=dashboard,
+        state={
+            "render_info": {
+                "db_list": [],
+                "cache_list": [],
+                "db_online_count": 0,
+                "db_offline_count": 0,
+                "db_error_count": 0,
+                "db_deactivate_count": 0,
+                "db_unknown_count": 0,
+                "db_total_count": 0,
+                "cache_online_count": 0,
+                "cache_offline_count": 0,
+                "cache_error_count": 0,
+                "cache_deactivate_count": 0,
+                "cache_unknown_count": 0,
+                "cache_total_count": 0,
+            },
+            "db_add_args": {
+                "db_name": "",
+                "db_type": "sqlite",
+                "db_host": "memory",
+                "db_port": 0,
+                "db_username": "",
+                "db_password": "",
+                "db_sql_echo": "close",
+                "db_pool_size": 5,
+                "status": NodeStatus.Unknown,
+            },
+            "db_edit_args": {},
+            "cache_add_args": {
+                "cache_name": "",
+                "cache_host": "127.0.0.1",
+                "cache_port": 6379,
+                "cache_pass": "",
+                "timeout": 5,
+                "main_db": 0,
+                "databases": 16,
+                "key_prefix": "",
+                "ttl_seconds": 300,
+                "max_size": 1024,
+                "cache_pool_size": 5,
+                "status": NodeStatus.Unknown,
+                "cache_type": "redis",
+            },
+            "cache_edit_args": {},
+
+            "db_connect_result": "",
+            "db_add_error": "",
+            "db_edit_error": "",
+
+            "cache_connect_result": "",
+            "cache_add_error": "",
+            "cache_edit_error": "",
+
+            "dialog_loading": False,
+
+            "add_db_dialog": False,
+            "add_cache_dialog": False,
+            "edit_db_dialog": False,
+            "edit_cache_dialog": False,
+        },
+        on_mount=[
+            CallTool("get_render_info", on_success=[
+                SetState("render_info.db_list", RESULT["db_list"]),
+                SetState("render_info.db_online_count", RESULT["db_online_count"]),
+                SetState("render_info.db_offline_count", RESULT["db_offline_count"]),
+                SetState("render_info.db_deactivate_count", RESULT["db_deactivate_count"]),
+                SetState("render_info.db_error_count", RESULT["db_error_count"]),
+                SetState("render_info.db_unknown_count", RESULT["db_unknown_count"]),
+                SetState("render_info.db_total_count", RESULT["db_total_count"]),
+
+                SetState("render_info.cache_list", RESULT["cache_list"]),
+                SetState("render_info.cache_online_count", RESULT["cache_online_count"]),
+                SetState("render_info.cache_offline_count", RESULT["cache_offline_count"]),
+                SetState("render_info.cache_deactivate_count", RESULT["cache_deactivate_count"]),
+                SetState("render_info.cache_error_count", RESULT["cache_error_count"]),
+                SetState("render_info.cache_unknown_count", RESULT["cache_unknown_count"]),
+                SetState("render_info.cache_total_count", RESULT["cache_total_count"]),
+            ])
+        ]
+    )
