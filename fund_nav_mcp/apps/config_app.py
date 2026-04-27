@@ -1,23 +1,20 @@
 __all__ = [
-    "cond", "check_result", "get_all_config", "get_render_info",
-    "add_database", "add_cache",
-    "update_database", "update_cache",
-    "delete_database", "delete_cache",
+    "config_app", "cond",
     "switch_default_db_config", "switch_default_cache_config",
     "db_test_connection", "cache_test_connection",
-    "config_tools_app"
+    "config_app_ui"
 ]
 
-from typing import Any, List, Counter, Tuple
+from typing import Any, List, Dict, Counter, Tuple
 
 from fastmcp import FastMCPApp
-from fund_nav_mcp.config import get_settings, MCPSettings
+from fund_nav_mcp.apps import CallTool
+from fund_nav_mcp.config import get_settings
 from fund_nav_mcp.models.common import UtilResponse
 from fund_nav_mcp.models.schemas import DatabaseConfig, CacheConfig
-from fund_nav_mcp.utils.enums import NodeStatus, Errcode
+from fund_nav_mcp.utils.enums import NodeStatus
 from fund_nav_mcp.utils.log import get_logger
 from prefab_ui.actions import SetState, CloseOverlay, ShowToast
-from prefab_ui.actions.mcp import CallTool
 from prefab_ui.app import PrefabApp
 from prefab_ui.components import (
     Card, CardContent, CardHeader, CardTitle,
@@ -27,7 +24,7 @@ from prefab_ui.components import (
     Container, Alert, AlertTitle, AlertDescription, Popover, Text, )
 from prefab_ui.rx import RESULT, Rx, EVENT, ERROR
 
-app = FastMCPApp("Config Tools")
+config_app = FastMCPApp("Config Tools")
 
 logger = get_logger(__name__)
 
@@ -50,38 +47,10 @@ def cond(pairs: List[tuple[Rx, Any]], default: Any = None) -> Any:
     return expr
 
 
-def check_result(result: UtilResponse) -> UtilResponse:
-    """
-    检查结果是否成功
-
-    Args:
-        result: API 调用结果
-
-    Returns:
-        通用响应
-    """
-    if result.code not in {Errcode.SUCCESS, Errcode.DONE, Errcode.CONTINUE, Errcode.PROCESS}:
-        logger.debug(result)
-        raise Exception(result.message)
-    return result
-
-
-@app.tool()
-def get_all_config() -> MCPSettings:
-    """
-    获取所有配置
-
-    Returns:
-        所有配置
-    """
-    return get_settings()
-
-
-from collections import Counter
-from typing import Dict, Any
-
-
-@app.tool()
+@config_app.tool(
+    name="get_render_info",
+    description="获取渲染信息"
+)
 def get_render_info() -> Dict[str, Any]:
     """
     获取渲染信息，包括数据库和缓存的状态汇总及详细列表。
@@ -155,124 +124,10 @@ def get_render_info() -> Dict[str, Any]:
     }
 
 
-@app.tool()
-def add_database(db_name: str, db_config: Dict[str, Any]) -> UtilResponse:
-    """
-    添加数据库配置
-
-    Args:
-        db_name: 数据库名称
-        db_config: 数据库配置字典
-
-    Returns:
-        通用响应
-    """
-    settings = get_settings()
-    db_config = DatabaseConfig.model_validate(db_config)
-    result = settings.add_database(db_name, db_config)
-    settings.store()
-    return check_result(result)
-
-
-@app.tool()
-def add_cache(cache_name: str, cache_config: Dict[str, Any]) -> UtilResponse:
-    """
-    添加缓存配置
-
-    Args:
-        cache_name: 缓存名称
-        cache_config: 缓存配置字典
-
-    Returns:
-        通用响应
-    """
-    settings = get_settings()
-    cache_config = CacheConfig.model_validate(cache_config)
-    result = settings.add_cache(cache_name, cache_config)
-    settings.store()
-    return check_result(result)
-
-
-@app.tool()
-def update_database(db_name: str, db_config: Dict[str, Any]) -> UtilResponse:
-    """
-    更新数据库配置
-
-    Args:
-        db_name: 数据库名称
-        db_config: 数据库配置字典
-
-    Returns:
-        通用响应
-    """
-    settings = get_settings()
-    db_config["status"] = db_config.get("status", NodeStatus.Unknown)
-    new_db_name = db_config["db_name"]
-    db_config = DatabaseConfig.model_validate(db_config)
-    result = settings.update_database(db_name, db_config, new_db_name=new_db_name if db_name != new_db_name else None)
-    settings.store()
-    return check_result(result)
-
-
-@app.tool()
-def update_cache(cache_name: str, cache_config: Dict[str, Any]) -> UtilResponse:
-    """
-    更新缓存配置
-
-    Args:
-        cache_name: 缓存名称
-        cache_config: 缓存配置字典
-
-    Returns:
-        通用响应
-    """
-    settings = get_settings()
-    cache_config["status"] = cache_config.get("status", NodeStatus.Unknown)
-    new_cache_name = cache_config["cache_name"]
-    cache_config = CacheConfig.model_validate(cache_config)
-    result = settings.update_cache(
-        cache_name, cache_config,
-        new_cache_name=new_cache_name if cache_name != new_cache_name else None
-    )
-    settings.store()
-    return check_result(result)
-
-
-@app.tool()
-def delete_database(db_name: str) -> UtilResponse:
-    """
-    删除数据库配置
-
-    Args:
-        db_name: 数据库名称
-
-    Returns:
-        通用响应
-    """
-    settings = get_settings()
-    result = settings.delete_database(db_name)
-    settings.store()
-    return check_result(result)
-
-
-@app.tool()
-def delete_cache(cache_name: str) -> UtilResponse:
-    """
-    删除缓存配置
-
-    Args:
-        cache_name: 缓存名称
-
-    Returns:
-        通用响应
-    """
-    settings = get_settings()
-    result = settings.delete_cache(cache_name)
-    settings.store()
-    return check_result(result)
-
-
-@app.tool()
+@config_app.tool(
+    name="switch_default_db_config",
+    description="切换默认数据库配置"
+)
 def switch_default_db_config(db_type: str) -> Dict[str, Any]:
     """
     切换默认数据库配置
@@ -325,7 +180,10 @@ def switch_default_db_config(db_type: str) -> Dict[str, Any]:
         }
 
 
-@app.tool()
+@config_app.tool(
+    name="switch_default_cache_config",
+    description="切换默认缓存配置"
+)
 def switch_default_cache_config(cache_type: str) -> Dict[str, Any]:
     """
     切换默认缓存配置
@@ -352,7 +210,10 @@ def switch_default_cache_config(cache_type: str) -> Dict[str, Any]:
         }
 
 
-@app.tool()
+@config_app.tool(
+    name="db_test_connection",
+    description="测试数据库连接"
+)
 def db_test_connection(db_config: Dict[str, Any]) -> UtilResponse:
     """
     测试数据库连接
@@ -369,7 +230,10 @@ def db_test_connection(db_config: Dict[str, Any]) -> UtilResponse:
     return result
 
 
-@app.tool()
+@config_app.tool(
+    name="cache_test_connection",
+    description="测试缓存连接"
+)
 def cache_test_connection(cache_config: Dict[str, Any]) -> UtilResponse:
     """
     测试缓存连接
@@ -386,8 +250,12 @@ def cache_test_connection(cache_config: Dict[str, Any]) -> UtilResponse:
     return result
 
 
-@app.ui()
-def config_tools_app() -> PrefabApp:
+@config_app.ui(
+    name="config_app",
+    title="配置工具应用",
+    description="配置工具应用"
+)
+def config_app_ui() -> PrefabApp:
     """
     配置工具应用
 

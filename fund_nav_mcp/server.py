@@ -9,7 +9,7 @@ from fastmcp.server.providers import FileSystemProvider
 import fund_nav_mcp.tools as tools
 from fund_nav_mcp.config import setup_settings
 from fund_nav_mcp.middleware import CustomStructuredLoggingMiddleware
-from fund_nav_mcp.tools.ui_tools import app
+from fund_nav_mcp.apps.config_app import config_app
 from fund_nav_mcp.utils.log import get_logger
 
 # 初始化应用配置实例
@@ -20,7 +20,7 @@ mcp = FastMCP(
     "Fund Nav MCP",
     providers=[
         FileSystemProvider(str(files(tools))),
-        app
+        config_app,
     ],
     middleware=[
         CustomStructuredLoggingMiddleware()
