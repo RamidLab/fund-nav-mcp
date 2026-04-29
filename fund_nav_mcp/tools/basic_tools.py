@@ -9,6 +9,7 @@ __all__ = [
 from typing import Any, Dict
 
 from fastmcp.tools import tool
+
 from fund_nav_mcp.config import get_settings, MCPSettings
 from fund_nav_mcp.models.common import UtilResponse
 from fund_nav_mcp.models.schemas import DatabaseConfig, CacheConfig
@@ -35,14 +36,14 @@ def health() -> UtilResponse:
     description="获取所有配置",
     tags={"config_tool"}
 )
-def get_all_config() -> MCPSettings:
+def get_all_config(reload: bool = False) -> MCPSettings:
     """
     获取所有配置
 
     Returns:
         所有配置
     """
-    return get_settings()
+    return get_settings(reload)
 
 
 @global_tool
@@ -64,8 +65,8 @@ def add_database(db_name: str, db_config: Dict[str, Any]) -> UtilResponse:
         通用响应
     """
     settings = get_settings()
-    db_config = DatabaseConfig.model_validate(db_config)
-    result = settings.add_database(db_name, db_config)
+    _db_config = DatabaseConfig.model_validate(db_config)
+    result = settings.add_database(db_name, _db_config)
     settings.store()
     return check_result(result)
 
@@ -89,8 +90,8 @@ def add_cache(cache_name: str, cache_config: Dict[str, Any]) -> UtilResponse:
         通用响应
     """
     settings = get_settings()
-    cache_config = CacheConfig.model_validate(cache_config)
-    result = settings.add_cache(cache_name, cache_config)
+    _cache_config = CacheConfig.model_validate(cache_config)
+    result = settings.add_cache(cache_name, _cache_config)
     settings.store()
     return check_result(result)
 
@@ -116,8 +117,8 @@ def update_database(db_name: str, db_config: Dict[str, Any]) -> UtilResponse:
     settings = get_settings()
     db_config["status"] = db_config.get("status", NodeStatus.Unknown)
     new_db_name = db_config["db_name"]
-    db_config = DatabaseConfig.model_validate(db_config)
-    result = settings.update_database(db_name, db_config, new_db_name=new_db_name if db_name != new_db_name else None)
+    _db_config = DatabaseConfig.model_validate(db_config)
+    result = settings.update_database(db_name, _db_config, new_db_name=new_db_name if db_name != new_db_name else None)
     settings.store()
     return check_result(result)
 
@@ -143,9 +144,9 @@ def update_cache(cache_name: str, cache_config: Dict[str, Any]) -> UtilResponse:
     settings = get_settings()
     cache_config["status"] = cache_config.get("status", NodeStatus.Unknown)
     new_cache_name = cache_config["cache_name"]
-    cache_config = CacheConfig.model_validate(cache_config)
+    _cache_config = CacheConfig.model_validate(cache_config)
     result = settings.update_cache(
-        cache_name, cache_config,
+        cache_name, _cache_config,
         new_cache_name=new_cache_name if cache_name != new_cache_name else None
     )
     settings.store()

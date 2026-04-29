@@ -16,7 +16,7 @@ import traceback
 from contextvars import ContextVar
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union, IO, cast
+from typing import Any, Dict, List, Optional, Union, cast, TextIO
 
 _log_context: ContextVar[Dict[str, Any]] = ContextVar("log_context", default={})
 
@@ -33,7 +33,7 @@ class _ColorEnum(str, Enum):
     """
 
     def __new__(cls, value: str, label: str) -> str:
-        obj = str.__new__(cls, value)
+        obj = str.__new__(cls, value)  # type: ignore[call-overload]
         obj._value_ = value
         obj.label = label
 
@@ -69,7 +69,7 @@ class _LogLevelEnum(int, Enum):
     """
 
     def __new__(cls, value: int, label: str, color: str) -> int:
-        obj = int.__new__(cls, value)
+        obj = int.__new__(cls, value)  # type: ignore[call-overload]
         obj._value_ = int(value)
         obj.label = label
         obj.color = color
@@ -245,7 +245,7 @@ class ClickableConsoleFormatter(logging.Formatter):
             # noinspection PyBroadException
             try:
                 raw = inner.encode('utf-8').decode('unicode_escape')
-                # 将 latin1 编码的字符串转为 utf-8
+                # 将 Latin1 编码的字符串转为 utf-8
                 decoded = raw.encode('latin1').decode('utf-8')
                 return decoded
             except Exception:
@@ -369,7 +369,7 @@ class TimestampRotatingFileHandler(logging.Handler):
         self.backup_count: int = backup_count
         self.encoding: str = encoding
         self.current_file: Optional[Path] = None
-        self.current_stream: Optional[IO[str]] = None
+        self.current_stream: Optional[TextIO] = None
         self._open_next_file()
 
     def _open_next_file(self) -> None:
@@ -377,6 +377,7 @@ class TimestampRotatingFileHandler(logging.Handler):
         self.log_dir.mkdir(parents=True, exist_ok=True)
         ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         self.current_file = self.log_dir / f"{self.file_base_name}_{ts}.log"
+        assert self.current_file is not None
         self.current_stream = open(self.current_file, "a", encoding=self.encoding)
         self._cleanup_old_files()
 
@@ -392,6 +393,11 @@ class TimestampRotatingFileHandler(logging.Handler):
 
     def emit(self, record: logging.LogRecord) -> None:
         """写入日志记录到当前文件。"""
+        # 防止 self.current_stream 为 None 时出错
+        if self.current_stream is None:
+            self.handleError(record)
+            return
+
         # noinspection PyBroadException
         try:
             self.current_stream.write(self.format(record) + "\n")
@@ -667,12 +673,14 @@ class LoggingManager:
                     name="LogListener",
                     daemon=False,
                 )
+                assert self._listener_proc is not None
                 self._listener_proc.start()
                 atexit.register(self._shutdown)
             root = logging.getLogger()
             for h in root.handlers[:]:
                 root.removeHandler(h)
             root.setLevel(self._level)
+            assert self._queue is not None
             root.addHandler(MPQueueHandler(self._queue))
             root.propagate = False
             self._started = True
@@ -781,7 +789,7 @@ def log_basic_config(
         max_file_size: int = 100 * 1024 * 1024,
         json_format: bool = True,
         separate_error_file: bool = False,
-        error_file_base_name: str = "fund_nav_mcp_error",
+        error_file_base_name: Optional[str] = "fund_nav_mcp_error",
 ) -> None:
     """
     配置全局日志系统。

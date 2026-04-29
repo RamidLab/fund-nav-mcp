@@ -1,7 +1,8 @@
-from typing import Any
+from typing import Any, Callable
+
+from prefab_ui.actions.mcp import get_tool_resolver, CallTool as _OriginalCallTool
 
 from fund_nav_mcp.tools import is_global_tool_name
-from prefab_ui.actions.mcp import get_tool_resolver, CallTool as _OriginalCallTool
 
 
 class CallTool(_OriginalCallTool):
@@ -9,14 +10,14 @@ class CallTool(_OriginalCallTool):
     重写 CallTool 类，确保在序列化时直接使用工具名称，不附加任何 App 的命名空间前缀
     """
 
-    def __init__(self, tool, **kwargs):
+    def __init__(self, tool: str | Callable[..., Any], **kwargs):
         super().__init__(tool, **kwargs)
 
     def _serialize_with_resolver(self, handler: Any) -> dict[str, Any]:
         raw_dict: dict[str, Any] = handler(self)
         tool_name = self.tool
 
-        if is_global_tool_name(tool_name):
+        if isinstance(tool_name, str) and is_global_tool_name(tool_name):
             raw_dict["tool"] = tool_name
         else:
             # App 私有工具：走 resolver 加哈希

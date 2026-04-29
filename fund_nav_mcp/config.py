@@ -3,16 +3,17 @@ from __future__ import annotations
 __all__ = ['MCPSettings', 'setup_settings', 'get_settings', 'store_settings']
 
 import os
-from typing import Any, Dict
+from typing import Any, Dict, Mapping, cast, Union, Optional
 
 import tomli_w
+from pydantic import Field, model_validator, SecretStr
+from pydantic_settings import BaseSettings, SettingsConfigDict, TomlConfigSettingsSource, PydanticBaseSettingsSource
+
 from fund_nav_mcp.models.common import UtilResponse
 from fund_nav_mcp.models.schemas import DatabaseConfig, CacheConfig, LoggingConfig
 from fund_nav_mcp.utils.enums import Errcode
 from fund_nav_mcp.utils.log import get_logger, log_basic_config, LogLevel
 from fund_nav_mcp.utils.path_utils import get_config_path
-from pydantic import Field, model_validator, SecretStr
-from pydantic_settings import BaseSettings, SettingsConfigDict, TomlConfigSettingsSource, PydanticBaseSettingsSource
 
 _CONFIG_PATH = get_config_path()
 
@@ -111,14 +112,85 @@ class MCPSettings(BaseSettings):
 
     @model_validator(mode='after')
     def set_default_db_with_cache(self) -> 'MCPSettings':
+        """设置默认数据库和缓存配置。"""
         if not self.databases:
             default_db = DatabaseConfig()
-            default_db.db_test_connection()
+            default_db.test_connection()
             self.databases = {"default": default_db}
         if self.cache_enabled and not self.caches:
             default_cache = CacheConfig()
             self.caches = {"default": default_cache}
         return self
+
+    @staticmethod
+    def _add_config(storage: dict, name: str, config: Any, config_type: str) -> UtilResponse:
+        """
+        添加配置项
+
+        Args:
+            storage: 配置字典，如 databases 或 caches
+            name: 配置项名称
+            config: 配置项值
+            config_type: 配置项类型，如 "数据库" 或 "缓存"
+
+        Returns:
+            通用响应
+        """
+        if name not in storage:
+            storage[name] = config
+            return UtilResponse(code=Errcode.SUCCESS, message=f"{config_type}配置 {name} 添加成功")
+        logger.error(f"{config_type}配置 {name} 已存在，无法添加")
+        return UtilResponse(code=Errcode.UNIQUE_CONFLICT, message=f"{config_type}配置 {name} 已存在，无法添加")
+
+    @staticmethod
+    def _update_config(storage: dict, name: str, config: Any, new_name: Optional[str],
+                       config_type: str) -> UtilResponse:
+        """
+        更新配置项
+
+        Args:
+            storage: 配置字典，如 databases 或 caches
+            name: 配置项名称
+            config: 配置项值
+            new_name: 新配置项名称，可选
+            config_type: 配置项类型，如 "数据库" 或 "缓存"
+
+        Returns:
+            通用响应
+        """
+        if name not in storage:
+            logger.error(f"{config_type}配置 {name} 不存在，无法修改")
+            return UtilResponse(code=Errcode.RECORD_NOT_FOUND, message=f"{config_type}配置 {name} 不存在，无法修改")
+
+        if new_name:
+            if new_name in storage:
+                return UtilResponse(code=Errcode.UNIQUE_CONFLICT,
+                                    message=f"{config_type}配置 {new_name} 已存在，无法修改")
+            # 删除旧键
+            del storage[name]
+            name = new_name
+
+        storage[name] = config
+        return UtilResponse(code=Errcode.SUCCESS, message=f"{config_type}配置 {name} 修改成功")
+
+    @staticmethod
+    def _delete_config(storage: dict, name: str, config_type: str) -> UtilResponse:
+        """
+        删除配置项
+
+        Args:
+            storage: 配置字典，如 databases 或 caches
+            name: 配置项名称
+            config_type: 配置项类型，如 "数据库" 或 "缓存"
+
+        Returns:
+            通用响应
+        """
+        if name in storage:
+            del storage[name]
+            return UtilResponse(code=Errcode.SUCCESS, message=f"{config_type}配置 {name} 删除成功")
+        logger.error(f"{config_type}配置 {name} 不存在，无法删除")
+        return UtilResponse(code=Errcode.RECORD_NOT_FOUND, message=f"{config_type}配置 {name} 不存在，无法删除")
 
     def add_database(self, db_name: str, db_config: DatabaseConfig) -> UtilResponse:
         """
@@ -127,153 +199,54 @@ class MCPSettings(BaseSettings):
         Args:
             db_name: 数据库名称
             db_config: 数据库配置
-
         Returns:
             UtilResponse
         """
-        if not db_name in self.databases:
-            self.databases[db_name] = db_config
-            return UtilResponse(code=Errcode.SUCCESS, message=f"数据库配置 {db_name} 添加成功")
-        logger.error(f"数据库配置 {db_name} 已存在，无法添加")
-        return UtilResponse(code=Errcode.UNIQUE_CONFLICT, message=f"数据库配置 {db_name} 已存在，无法添加")
+        return self._add_config(self.databases, db_name, db_config, "数据库")
 
     def update_database(self, db_name: str, db_config: DatabaseConfig, new_db_name: str = None) -> UtilResponse:
-        """
-        更新数据库配置。
-
-        Args:
-            db_name: 数据库名称
-            db_config: 数据库配置
-            new_db_name: 新的数据库名称，默认 None，不修改名称
-
-        Returns:
-            UtilResponse
-        """
-        if db_name in self.databases:
-            if new_db_name and not new_db_name in self.databases:
-                return UtilResponse(code=Errcode.UNIQUE_CONFLICT, message=f"数据库配置 {new_db_name} 已存在，无法修改")
-            elif new_db_name and not new_db_name in self.databases:
-                del self.databases[db_name]
-                db_name = new_db_name
-            else:
-                self.databases[db_name] = db_config
-                return UtilResponse(code=Errcode.SUCCESS, message=f"数据库配置 {db_name} 修改成功")
-        logger.error(f"数据库配置 {db_name} 不存在，无法修改")
-        return UtilResponse(code=Errcode.RECORD_NOT_FOUND, message=f"数据库配置 {db_name} 不存在，无法修改")
+        """更新数据库配置"""
+        return self._update_config(self.databases, db_name, db_config, new_db_name, "数据库")
 
     def delete_database(self, db_name: str) -> UtilResponse:
-        """
-        删除数据库配置。
-
-        Args:
-            db_name: 数据库名称
-
-        Returns:
-            UtilResponse
-        """
-        if db_name in self.databases:
-            del self.databases[db_name]
-            return UtilResponse(code=Errcode.SUCCESS, message=f"数据库配置 {db_name} 删除成功")
-        logger.error(f"数据库配置 {db_name} 不存在，无法删除")
-        return UtilResponse(code=Errcode.RECORD_NOT_FOUND, message=f"数据库配置 {db_name} 不存在，无法删除")
+        """删除数据库配置"""
+        return self._delete_config(self.databases, db_name, "数据库")
 
     def add_cache(self, cache_name: str, cache_config: CacheConfig) -> UtilResponse:
-        """
-        添加缓存配置。
-
-        Args:
-            cache_name: 缓存名称
-            cache_config: 缓存配置
-
-        Returns:
-            UtilResponse
-        """
-        if not cache_name in self.caches:
-            self.caches[cache_name] = cache_config
-            return UtilResponse(code=Errcode.SUCCESS, message=f"缓存配置 {cache_name} 添加成功")
-        logger.error(f"缓存配置 {cache_name} 已存在，无法添加")
-        return UtilResponse(code=Errcode.UNIQUE_CONFLICT, message=f"缓存配置 {cache_name} 已存在，无法添加")
+        """添加缓存配置"""
+        return self._add_config(self.caches, cache_name, cache_config, "缓存")
 
     def update_cache(self, cache_name: str, cache_config: CacheConfig, new_cache_name: str = None) -> UtilResponse:
-        """
-        更新缓存配置。
-
-        Args:
-            cache_name: 缓存名称
-            cache_config: 缓存配置
-            new_cache_name: 新的缓存名称，默认 None，不修改名称
-
-        Returns:
-            UtilResponse
-        """
-        if cache_name in self.caches:
-            if new_cache_name and not new_cache_name in self.caches:
-                return UtilResponse(code=Errcode.UNIQUE_CONFLICT, message=f"缓存配置 {new_cache_name} 已存在，无法修改")
-            elif new_cache_name and not new_cache_name in self.caches:
-                del self.caches[cache_name]
-                cache_name = new_cache_name
-            else:
-                self.caches[cache_name] = cache_config
-                return UtilResponse(code=Errcode.SUCCESS, message=f"缓存配置 {cache_name} 修改成功")
-
-        logger.error(f"缓存配置 {cache_name} 不存在，无法修改")
-        return UtilResponse(code=Errcode.RECORD_NOT_FOUND, message=f"缓存配置 {cache_name} 不存在，无法修改")
+        """更新缓存配置"""
+        return self._update_config(self.caches, cache_name, cache_config, new_cache_name, "缓存")
 
     def delete_cache(self, cache_name: str) -> UtilResponse:
-        """
-        删除缓存配置。
-
-        Args:
-            cache_name: 缓存名称
-
-        Returns:
-            UtilResponse
-        """
-        if cache_name in self.caches:
-            del self.caches[cache_name]
-            return UtilResponse(code=Errcode.SUCCESS, message=f"缓存配置 {cache_name} 删除成功")
-        logger.error(f"缓存配置 {cache_name} 不存在，无法删除")
-        return UtilResponse(code=Errcode.RECORD_NOT_FOUND, message=f"缓存配置 {cache_name} 不存在，无法删除")
+        """删除缓存配置"""
+        return self._delete_config(self.caches, cache_name, "缓存")
 
     @staticmethod
-    def db_test_connection(db_config: DatabaseConfig) -> UtilResponse:
+    def test_connection(config: Union[DatabaseConfig, CacheConfig]) -> UtilResponse:
         """
-        测试数据库连接。
+        测试数据库或缓存连接。
 
         Args:
-            db_config: 数据库配置
+            config: 数据库或缓存配置
 
         Returns:
             UtilResponse
         """
-        result, error_msg, status = db_config.db_test_connection()
-        db_config.status = status
+
+        result, error_msg, status = config.test_connection()
+        config.status = status
         return UtilResponse(
-            code=Errcode.SUCCESS if result else Errcode.DB_CONNECTION_FAILED,
-            message="数据库连接测试成功" if result else f"{error_msg}",
-            data=db_config
+            code=Errcode.SUCCESS if result else (Errcode.DB_CONNECTION_FAILED
+                                                 if isinstance(config, DatabaseConfig)
+                                                 else Errcode.CACHE_CONNECTION_FAILED),
+            message=f"{'数据库' if isinstance(config, DatabaseConfig) else '缓存'}连接测试成功" if result else f"{error_msg}",
+            data=config
         )
 
-    @staticmethod
-    def cache_test_connection(cache_config: CacheConfig) -> UtilResponse:
-        """
-        测试缓存连接。
-
-        Args:
-            cache_config: 缓存配置
-
-        Returns:
-            UtilResponse
-        """
-        result, error_msg, status = cache_config.test_connection()
-        cache_config.status = status
-        return UtilResponse(
-            code=Errcode.SUCCESS if result else Errcode.CACHE_CONNECTION_FAILED,
-            message="缓存连接测试成功" if result else f"{error_msg}",
-            data=cache_config
-        )
-
-    def _prepare_for_toml(self, obj):
+    def _prepare_for_toml(self, obj) -> dict | list | str:
         """递归将 SecretStr 转为明文，其余保持原样，使对象可被 TOML 序列化。"""
         if isinstance(obj, SecretStr):
             return obj.get_secret_value()
@@ -292,7 +265,7 @@ class MCPSettings(BaseSettings):
         """
         config = self.model_dump(exclude_none=True)
         safe_config = self._prepare_for_toml(config)
-        return tomli_w.dumps(safe_config)
+        return tomli_w.dumps(cast(Mapping[str, Any], safe_config))
 
     def store(self) -> None:
         """
@@ -305,7 +278,7 @@ class MCPSettings(BaseSettings):
         _CONFIG_PATH.write_text(self._to_toml(), encoding="utf-8")
 
 
-_settings: MCPSettings | None = None
+_settings = None
 
 
 def setup_settings() -> MCPSettings:
@@ -335,7 +308,7 @@ def get_settings(reload: bool = False) -> MCPSettings:
     return _settings
 
 
-def store_settings(settings: MCPSettings | None = None) -> None:
+def store_settings(settings: MCPSettings) -> None:
     """
     保存当前应用配置到 TOML 文件。
 

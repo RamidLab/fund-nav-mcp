@@ -1,8 +1,9 @@
 __all__ = ["NodeStatus", "Errcode"]
 
 from enum import Enum
+from typing import Any
 
-from prefab_ui.components import Badge, Component
+from prefab_ui.components import Badge
 from starlette.status import *
 
 
@@ -18,12 +19,11 @@ class _NodeStatusEnum(str, Enum):
        - .html_code -> function
     """
 
-    def __new__(cls, value: str, label: str, component: Component) -> str:
-        obj = str.__new__(cls, value)
+    def __new__(cls, value: str, label: str, component: dict[str, Any]) -> str:
+        obj = str.__new__(cls, value)  # type: ignore[call-overload]
         obj._value_ = value
         obj.label = label
         obj.component = component
-
         return obj
 
     def __str__(self):
@@ -58,8 +58,8 @@ class _ErrcodeEnum(int, Enum):
        - .http  -> int (HTTP 状态码)
     """
 
-    def __new__(cls, value: int, label: str, http: int):
-        obj = int.__new__(cls, value)
+    def __new__(cls, value: int, label: str, http: int) -> int:
+        obj = int.__new__(cls, value)  # type: ignore[call-overload]
         obj._value_ = int(value)
         obj.label = label
         obj.http = int(http)

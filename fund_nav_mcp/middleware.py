@@ -6,6 +6,8 @@ from typing import Callable, Any, Optional
 
 from fastmcp.server.middleware import MiddlewareContext, CallNext
 from fastmcp.server.middleware.logging import StructuredLoggingMiddleware
+from pydantic import TypeAdapter
+
 from fund_nav_mcp.utils.log import get_logger, bind_context, clear_context
 
 
@@ -21,7 +23,8 @@ class CustomStructuredLoggingMiddleware(StructuredLoggingMiddleware):
             include_payloads: bool = os.getenv("MCP_LOG_INCLUDE_PAYLOADS", "false") == "true",
             include_payload_length: bool = os.getenv("MCP_LOG_INCLUDE_PAYLOADS_LENGTH", "false") == "true",
             estimate_payload_tokens: bool = os.getenv("MCP_LOG_ESTIMATE_PAYLOAD_TOKENS", "false") == "true",
-            methods: Optional[list[str]] = os.getenv("MCP_LOG_METHODS", None),
+            methods: Optional[list[str]] = TypeAdapter(Optional[list[str]]).validate_python(
+                os.getenv("MCP_LOG_METHODS")),
             payload_serializer: Optional[Callable[[Any], str]] = None,
             *args, **kwargs
     ):
@@ -46,7 +49,7 @@ class CustomStructuredLoggingMiddleware(StructuredLoggingMiddleware):
             None
         """
         log_method = self._logger.log
-        log_method(log_level or self.log_level, message.get("event", "log"), extra=message)
+        log_method(isinstance(log_level or self.log_level, int), message.get("event", "log"), extra=message)
 
     async def on_message(self, context: MiddlewareContext, call_next: CallNext) -> Any:
         """

@@ -1,19 +1,8 @@
-__all__ = [
-    "config_app", "cond",
-    "switch_default_db_config", "switch_default_cache_config",
-    "db_test_connection", "cache_test_connection",
-    "config_app_ui"
-]
+__all__ = ["config_app", "cond", "switch_default_config", "test_connection", "config_app_ui"]
 
 from typing import Any, List, Dict, Counter, Tuple
 
 from fastmcp import FastMCPApp
-from fund_nav_mcp.apps import CallTool
-from fund_nav_mcp.config import get_settings
-from fund_nav_mcp.models.common import UtilResponse
-from fund_nav_mcp.models.schemas import DatabaseConfig, CacheConfig
-from fund_nav_mcp.utils.enums import NodeStatus
-from fund_nav_mcp.utils.log import get_logger
 from prefab_ui.actions import SetState, CloseOverlay, ShowToast
 from prefab_ui.app import PrefabApp
 from prefab_ui.components import (
@@ -23,6 +12,13 @@ from prefab_ui.components import (
     DataTableColumn, Button, Row, Dialog, Div, Form, Column, Label, Input, Select, SelectOption, Badge, Loader, If,
     Container, Alert, AlertTitle, AlertDescription, Popover, Text, )
 from prefab_ui.rx import RESULT, Rx, EVENT, ERROR
+
+from fund_nav_mcp.apps import CallTool
+from fund_nav_mcp.config import get_settings
+from fund_nav_mcp.models.common import UtilResponse
+from fund_nav_mcp.models.schemas import DatabaseConfig, CacheConfig
+from fund_nav_mcp.utils.enums import NodeStatus
+from fund_nav_mcp.utils.log import get_logger
 
 config_app = FastMCPApp("Config Tools")
 
@@ -77,8 +73,8 @@ def get_render_info() -> Dict[str, Any]:
                 **cfg.model_dump(),
                 name_key: name,
                 "status_component": cfg.status.component,
-                **({"db_sql_echo_text": "是" if cfg.db_sql_echo == "open" else "否"}
-                   if "db_sql_echo" in cfg.model_fields else {}),
+                **(({"db_sql_echo_text": "是" if cfg.db_sql_echo == "open" else "否"})
+                   if isinstance(cfg, DatabaseConfig) else {}),
             }
             data.append(item)
             statuses.append(item.get("status"))
@@ -125,129 +121,127 @@ def get_render_info() -> Dict[str, Any]:
 
 
 @config_app.tool(
-    name="switch_default_db_config",
-    description="切换默认数据库配置"
+    name="switch_default_config",
+    description="切换默认配置"
 )
-def switch_default_db_config(db_type: str) -> Dict[str, Any]:
+def switch_default_config(_class: str, _type: str) -> Dict[str, Any]:
     """
-    切换默认数据库配置
+    切换默认配置
 
     Args:
-        db_type: 数据库类型
+        _class: 配置类型，"db" 或 "cache"
+        _type: 配置类型，"sqlite", "mysql", "postgresql", "influxdb" 或 "redis"
 
     Returns:
-        数据库配置字典
+        默认配置
     """
-    if db_type == "sqlite":
-        return {
-            "db_host": "memory",
-            "db_port": 0,
-            "db_username": "",
-            "db_password": "",
-            "status": NodeStatus.Unknown,
-        }
-    elif db_type == "mysql":
-        return {
-            "db_host": "127.0.0.1",
-            "db_port": 3306,
-            "db_username": "",
-            "db_password": "",
-            "status": NodeStatus.Unknown,
-        }
-    elif db_type == "postgresql":
-        return {
-            "db_host": "127.0.0.1",
-            "db_port": 5432,
-            "db_username": "",
-            "db_password": "",
-            "status": NodeStatus.Unknown,
-        }
-    elif db_type == "influxdb":
-        return {
-            "db_host": "127.0.0.1",
-            "db_port": 8086,
-            "db_username": "",
-            "db_password": "",
-            "status": NodeStatus.Unknown,
-        }
-    else:
-        return {
-            "db_host": "",
-            "db_port": 0,
-            "db_username": "",
-            "db_password": "",
-            "status": NodeStatus.Unknown,
-        }
+    # 数据库默认配置映射 (host, port)
+    db_defaults = {
+        "sqlite": ("memory", 0),
+        "mysql": ("127.0.0.1", 3306),
+        "postgresql": ("127.0.0.1", 5432),
+        "influxdb": ("127.0.0.1", 8086),
+    }
+    # 缓存默认配置映射 (host, port)
+    cache_defaults = {
+        "redis": ("127.0.0.1", 6379),
+    }
 
-
-@config_app.tool(
-    name="switch_default_cache_config",
-    description="切换默认缓存配置"
-)
-def switch_default_cache_config(cache_type: str) -> Dict[str, Any]:
-    """
-    切换默认缓存配置
-
-    Args:
-        cache_type: 缓存类型
-
-    Returns:
-        缓存配置字典
-    """
-    if cache_type == "redis":
+    if _class == "db":
+        host, port = db_defaults.get(_type, ("", 0))
         return {
-            "cache_host": "127.0.0.1",
-            "cache_port": 6379,
+            "db_host": host,
+            "db_port": port,
+            "db_username": "",
+            "db_password": "",
+            "status": NodeStatus.Unknown,
+        }
+    if _class == "cache":
+        host, port = cache_defaults.get(_type, ("", 0))
+        return {
+            "cache_host": host,
+            "cache_port": port,
             "cache_pass": "",
             "status": NodeStatus.Unknown,
         }
+    return {}
+
+
+@config_app.tool(
+    name="test_connection",
+    description="测试连接"
+)
+def test_connection(_class: str, config: Dict[str, Any]) -> UtilResponse:
+    settings = get_settings()
+    if _class == "db":
+        _config = DatabaseConfig.model_validate(config)
+    elif _class == "cache":
+        _config = CacheConfig.model_validate(config)
     else:
-        return {
-            "cache_host": "",
-            "cache_port": 0,
-            "cache_pass": "",
-            "status": NodeStatus.Unknown,
-        }
-
-
-@config_app.tool(
-    name="db_test_connection",
-    description="测试数据库连接"
-)
-def db_test_connection(db_config: Dict[str, Any]) -> UtilResponse:
-    """
-    测试数据库连接
-
-    Args:
-        db_config: 数据库配置字典
-
-    Returns:
-        通用响应
-    """
-    settings = get_settings()
-    db_config = DatabaseConfig.model_validate(db_config)
-    result = settings.db_test_connection(db_config)
+        logger.error(f"无效的配置类型: {_class}")
+        raise ValueError(f"Invalid class type: {_class}")
+    result = settings.test_connection(_config)
     return result
 
 
-@config_app.tool(
-    name="cache_test_connection",
-    description="测试缓存连接"
-)
-def cache_test_connection(cache_config: Dict[str, Any]) -> UtilResponse:
-    """
-    测试缓存连接
+def loder_overlay() -> None:
+    with If(Rx("dialog_loading")):
+        with Container(
+                css_class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"):  # type: ignore
+            Loader(size="lg")
 
-    Args:
-        cache_config: 缓存配置字典
 
-    Returns:
-        通用响应
-    """
-    settings = get_settings()
-    cache_config = CacheConfig.model_validate(cache_config)
-    result = settings.cache_test_connection(cache_config)
-    return result
+def status_display(prefix: str, action: str) -> None:
+    with If(Rx(f"{prefix}_action_result") != ""):
+        with If(Rx(f"{prefix}_{action}_args.status") == NodeStatus.Active):
+            with Alert(variant="success", icon="circle-check"):
+                AlertTitle("连接成功")
+        with If(Rx(f"{prefix}_{action}_args.status") == NodeStatus.Inactive):
+            with Alert(icon="circle-alert"):
+                AlertTitle("连接失败")
+                AlertDescription(str(Rx(f"{prefix}_action_result")))
+        with If(Rx(f"{prefix}_{action}_args.status") == NodeStatus.AuthFailed):
+            with Alert(icon="circle-alert"):
+                AlertTitle("认证失败")
+                AlertDescription(str(Rx(f"{prefix}_action_result")))
+        with If(Rx(f"{prefix}_{action}_args.status") == NodeStatus.Error):
+            with Alert(variant="destructive", icon="circle-x"):
+                AlertTitle("错误信息")
+                AlertDescription(str(Rx(f"{prefix}_action_result")))
+
+
+def button_test(prefix: str, action: str) -> None:
+    Button(
+        "测试", variant="outline", button_type="button",
+        on_click=
+        [
+            SetState("dialog_loading", True),
+            CallTool(
+                "test_connection",
+                arguments={"_class": prefix, "config": Rx(f"{prefix}_{action}_args")},
+                on_success=[
+                    SetState(f"{prefix}_action_result", RESULT.message),
+                    SetState(f"{prefix}_{action}_args.status", RESULT.data.status),
+                    SetState("dialog_loading", False),
+                ],
+                on_error=[
+                    SetState(f"{prefix}_action_result", ERROR),
+                    SetState(f"{prefix}_{action}_args.status", NodeStatus.Error),
+                    ShowToast(f"{'数据库' if prefix == 'db' else '缓存'}连接失败", variant="error"),
+                    SetState("dialog_loading", False),
+                ],
+            ),
+        ]),
+
+
+def get_status_component_args(prefix: str, action: str) -> Tuple[str, str]:
+    _status_pairs = [(Rx(f"{prefix}_{action}_args.status") == member.value, member) for member in NodeStatus]
+    status = cond(_status_pairs, default=NodeStatus.Unknown)
+    status_variant = cond(
+        [(cond_expr, member.label) for cond_expr, member in _status_pairs],
+        default=NodeStatus.Unknown.label,
+    )
+    return status, status_variant
 
 
 @config_app.ui(
@@ -266,18 +260,15 @@ def config_app_ui() -> PrefabApp:
         with Dialog(title="添加数据库", name="add_db_dialog", css_class="fixed inset-0 bg-black/50"):  # type: ignore
             Div()
             with Form():
-                with If(Rx("dialog_loading")):
-                    with Container(
-                            css_class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"):  # type: ignore
-                        Loader(size="lg")
+                loder_overlay()
                 with Column(gap=2):
                     Label("数据库类型")
                     with Select(placeholder="选择数据库类型...", name="db_add_args.db_type", onChange=[
                         SetState("db_add_args.db_type", EVENT),
-                        SetState("db_connect_result", ""),
+                        SetState("db_action_result", ""),
                         CallTool(
-                            "switch_default_db_config",
-                            arguments={"db_type": Rx("db_add_args.db_type")},
+                            "switch_default_config",
+                            arguments={"_class": "db", "_type": Rx("db_add_args.db_type")},
                             on_success=[
                                 SetState("db_add_args.db_host", RESULT["db_host"]),
                                 SetState("db_add_args.db_port", RESULT["db_port"]),
@@ -323,60 +314,16 @@ def config_app_ui() -> PrefabApp:
                         SelectOption(value="open", label="是")
                         SelectOption(value="close", label="否", selected=True)
                 with Column(gap=2):
-                    _status_pairs = [(Rx("db_add_args.status") == member.value, member) for member in NodeStatus]
-                    status = cond(_status_pairs, default=NodeStatus.Unknown)
-                    status_variant = cond(
-                        [(cond_expr, member.label) for cond_expr, member in _status_pairs],
-                        default=NodeStatus.Unknown.label,
-                    )
+                    status, status_variant = get_status_component_args(prefix="db", action="add")
 
                     with Row(gap=2, css_class="items-center"):  # type: ignore
                         Label(f"数据库状态：")
                         Badge(status, variant=status_variant)
-                    with If(Rx("db_connect_result") != ""):
-                        with If(Rx("db_add_args.status") == NodeStatus.Active):
-                            with Alert(variant="success", icon="circle-check"):
-                                AlertTitle("连接成功")
-                        with If(Rx("db_add_args.status") == NodeStatus.Inactive):
-                            with Alert(icon="circle-alert"):
-                                AlertTitle("连接失败")
-                                AlertDescription(str(Rx("db_connect_result")))
-                        with If(Rx("db_add_args.status") == NodeStatus.AuthFailed):
-                            with Alert(icon="circle-alert"):
-                                AlertTitle("认证失败")
-                                AlertDescription(str(Rx("db_connect_result")))
-                        with If(Rx("db_add_args.status") == NodeStatus.Error):
-                            with Alert(variant="destructive", icon="circle-x"):
-                                AlertTitle("错误信息")
-                                AlertDescription(str(Rx("db_connect_result")))
 
-                    with If(Rx("db_add_error") != ""):
-                        with Alert(variant="destructive", icon="circle-x"):
-                            AlertTitle("错误信息")
-                            AlertDescription(str(Rx("db_add_error")))
+                    status_display(prefix="db", action="add")
 
                 with Row(gap=2, css_class="justify-end"):  # type: ignore
-                    Button(
-                        "测试", variant="outline", button_type="button",
-                        on_click=
-                        [
-                            SetState("dialog_loading", True),
-                            CallTool(
-                                "db_test_connection",
-                                arguments={"db_config": Rx("db_add_args")},
-                                on_success=[
-                                    SetState("db_connect_result", RESULT.message),
-                                    SetState("db_add_args.status", RESULT.data.status),
-                                    SetState("dialog_loading", False),
-                                ],
-                                on_error=[
-                                    SetState("db_connect_result", ERROR),
-                                    SetState("db_add_args.status", NodeStatus.Error),
-                                    ShowToast(f"数据库连接失败", variant="error"),
-                                    SetState("dialog_loading", False),
-                                ],
-                            ),
-                        ]),
+                    button_test(prefix="db", action="add")
 
                     Button("添加", variant="outline", button_type="button", on_click=[  # type: ignore
                         SetState("dialog_loading", True),
@@ -387,7 +334,7 @@ def config_app_ui() -> PrefabApp:
                                 "db_config": Rx("db_add_args")
                             },
                             on_success=[
-                                SetState("db_add_error", ""),
+                                SetState("db_action_result", ""),
                                 SetState("db_add_args.db_name", ""),
                                 SetState("db_add_args", DatabaseConfig().model_dump()),
                                 CallTool("get_render_info", on_success=[
@@ -397,12 +344,14 @@ def config_app_ui() -> PrefabApp:
                                     SetState("render_info.db_deactivate_count", RESULT["db_deactivate_count"]),
                                     SetState("render_info.db_error_count", RESULT["db_error_count"]),
                                 ]),
+                                SetState("db_add_args.status", RESULT.data.status),
                                 SetState("dialog_loading", False),
                                 ShowToast("数据库添加成功"),
                                 CloseOverlay(),
                             ],
                             on_error=[
-                                SetState("db_add_error", ERROR),
+                                SetState("db_action_result", ERROR),
+                                SetState("db_add_args.status", NodeStatus.Error),
                                 SetState("dialog_loading", False),
                                 ShowToast("数据库添加失败"),
                             ],
@@ -410,7 +359,7 @@ def config_app_ui() -> PrefabApp:
                     ]),
                     Button("取消", variant="destructive", on_click=[
                         CloseOverlay(),
-                        SetState("db_connect_result", ""),
+                        SetState("db_action_result", ""),
                         SetState("db_add_args.db_name", ""),
                         SetState("db_add_args", DatabaseConfig().model_dump()),
                     ], button_type="button")
@@ -427,16 +376,16 @@ def config_app_ui() -> PrefabApp:
                     Label("数据库类型")
                     with Select(placeholder="选择数据库类型...", name="db_edit_args.db_type", onChange=[
                         SetState("db_edit_args.db_type", EVENT),
-                        SetState("db_connect_result", ""),
+                        SetState("db_action_result", ""),
                         CallTool(
-                            "switch_default_db_config",
-                            arguments={"db_type": Rx("db_edit_args.db_type")},
+                            "switch_default_config",
+                            arguments={"_class": "db", "_type": Rx("db_edit_args.db_type")},
                             on_success=[
                                 SetState("db_edit_args.db_host", RESULT["db_host"]),
                                 SetState("db_edit_args.db_port", RESULT["db_port"]),
-                                SetState("db_edit_args.db_pool_size", RESULT["db_pool_size"]),
                                 SetState("db_edit_args.db_username", RESULT["db_username"]),
                                 SetState("db_edit_args.db_password", RESULT["db_password"]),
+                                SetState("db_edit_args.status", RESULT["status"]),
                             ]
                         ),
                     ]):
@@ -498,61 +447,16 @@ def config_app_ui() -> PrefabApp:
                         SelectOption(value="open", label="是")
                         SelectOption(value="close", label="否")
                 with Column(gap=2):
-                    _status_pairs = [(Rx("db_edit_args.status") == member.value, member) for member in
-                                     NodeStatus]
-                    status = cond(_status_pairs, default=NodeStatus.Unknown)
-                    status_variant = cond(
-                        [(cond_expr, member.label) for cond_expr, member in _status_pairs],
-                        default=NodeStatus.Unknown.label,
-                    )
+                    status, status_variant = get_status_component_args(prefix="db", action="edit")
 
                     with Row(gap=2, css_class="items-center"):  # type: ignore
                         Label(f"数据库状态：")
                         Badge(status, variant=status_variant)
-                    with If(Rx("db_connect_result") != ""):
-                        with If(Rx("db_edit_args.status") == NodeStatus.Active):
-                            with Alert(variant="success", icon="circle-check"):
-                                AlertTitle("连接成功")
-                        with If(Rx("db_edit_args.status") == NodeStatus.Inactive):
-                            with Alert(icon="circle-alert"):
-                                AlertTitle("连接失败")
-                                AlertDescription(str(Rx("db_connect_result")))
-                        with If(Rx("db_edit_args.status") == NodeStatus.AuthFailed):
-                            with Alert(icon="circle-alert"):
-                                AlertTitle("认证失败")
-                                AlertDescription(str(Rx("db_connect_result")))
-                        with If(Rx("db_edit_args.status") == NodeStatus.Error):
-                            with Alert(variant="destructive", icon="circle-x"):
-                                AlertTitle("错误信息")
-                                AlertDescription(str(Rx("db_connect_result")))
 
-                    with If(Rx("db_edit_error") != ""):
-                        with Alert(variant="destructive", icon="circle-x"):
-                            AlertTitle("错误信息")
-                            AlertDescription(str(Rx("db_edit_error")))
+                    status_display(prefix="db", action="edit")
 
                 with Row(gap=2, css_class="justify-end"):  # type: ignore
-                    Button(
-                        "测试", variant="outline", button_type="button",
-                        on_click=
-                        [
-                            SetState("dialog_loading", True),
-                            CallTool(
-                                "db_test_connection",
-                                arguments={"db_config": Rx("db_edit_args")},
-                                on_success=[
-                                    SetState("db_connect_result", RESULT.message),
-                                    SetState("db_edit_args.status", RESULT.data.status),
-                                    SetState("dialog_loading", False),
-                                ],
-                                on_error=[
-                                    SetState("db_connect_result", ERROR),
-                                    SetState("db_edit_args.status", NodeStatus.Error),
-                                    ShowToast(f"数据库连接失败", variant="error"),
-                                    SetState("dialog_loading", False),
-                                ],
-                            ),
-                        ]),
+                    button_test(prefix="db", action="edit")
 
                     Button("保存", variant="outline", button_type="submit", on_click=[  # type: ignore
                         SetState("dialog_loading", True),
@@ -563,7 +467,7 @@ def config_app_ui() -> PrefabApp:
                                 "db_config": Rx("db_edit_args"),
                             },
                             on_success=[
-                                SetState("db_edit_error", ""),
+                                SetState("db_action_result", ""),
                                 SetState("db_edit_args", {}),
                                 CallTool("get_render_info", on_success=[
                                     SetState("render_info.db_list", RESULT["db_list"]),
@@ -572,13 +476,15 @@ def config_app_ui() -> PrefabApp:
                                     SetState("render_info.db_deactivate_count", RESULT["db_deactivate_count"]),
                                     SetState("render_info.db_error_count", RESULT["db_error_count"]),
                                 ]),
+                                SetState("db_edit_args.status", RESULT.data.status),
                                 SetState("dialog_loading", False),
                                 ShowToast("数据库更新成功"),
                                 SetState("edit_db_dialog", False),
                                 CloseOverlay(),
                             ],
                             on_error=[
-                                SetState("db_edit_error", ERROR),
+                                SetState("db_action_result", ERROR),
+                                SetState("db_edit_args.status", NodeStatus.Error),
                                 SetState("dialog_loading", False),
                                 ShowToast("数据库更新失败"),
                             ],
@@ -600,7 +506,7 @@ def config_app_ui() -> PrefabApp:
                                             "db_config": Rx("db_edit_args"),
                                         },
                                         on_success=[
-                                            SetState("db_edit_error", ""),
+                                            SetState("db_action_result", ""),
                                             SetState("db_edit_args", {}),
                                             CallTool("get_render_info", on_success=[
                                                 SetState("render_info.db_list", RESULT["db_list"]),
@@ -610,13 +516,15 @@ def config_app_ui() -> PrefabApp:
                                                          RESULT["db_deactivate_count"]),
                                                 SetState("render_info.db_error_count", RESULT["db_error_count"]),
                                             ]),
+                                            SetState("db_edit_args.status", RESULT.data.status),
                                             SetState("dialog_loading", False),
                                             ShowToast("数据库停用成功"),
                                             CloseOverlay(),
                                             SetState("edit_db_dialog", False),
                                         ],
                                         on_error=[
-                                            SetState("db_edit_error", ERROR),
+                                            SetState("db_action_result", ERROR),
+                                            SetState("db_edit_args.status", NodeStatus.Error),
                                             SetState("dialog_loading", False),
                                             ShowToast("数据库停用失败"),
                                         ],
@@ -635,7 +543,7 @@ def config_app_ui() -> PrefabApp:
                                         "delete_database",
                                         arguments={"db_name": Rx("db_edit_args.db_old_name")},
                                         on_success=[
-                                            SetState("db_edit_error", ""),
+                                            SetState("db_action_result", ""),
                                             SetState("db_edit_args", {}),
                                             CallTool("get_render_info", on_success=[
                                                 SetState("render_info.db_list", RESULT["db_list"]),
@@ -645,13 +553,15 @@ def config_app_ui() -> PrefabApp:
                                                          RESULT["db_deactivate_count"]),
                                                 SetState("render_info.db_error_count", RESULT["db_error_count"]),
                                             ]),
+                                            SetState("db_edit_args.status", RESULT.data.status),
                                             SetState("dialog_loading", False),
                                             ShowToast("数据库删除成功"),
                                             CloseOverlay(),
                                             SetState("edit_db_dialog", False),
                                         ],
                                         on_error=[
-                                            SetState("db_edit_error", ERROR),
+                                            SetState("db_action_result", ERROR),
+                                            SetState("db_edit_args.status", NodeStatus.Error),
                                             SetState("dialog_loading", False),
                                             ShowToast("数据库删除失败"),
                                         ],
@@ -660,7 +570,7 @@ def config_app_ui() -> PrefabApp:
                             )
                     Button("取消", variant="destructive", on_click=[
                         CloseOverlay(),
-                        SetState("db_connect_result", ""),
+                        SetState("db_action_result", ""),
                         SetState("db_edit_args", {}),
                     ], button_type="button")
 
@@ -676,10 +586,10 @@ def config_app_ui() -> PrefabApp:
                     with Select(disabled=True, placeholder="选择数据库类型...", name="cache_add_args.cache_type",
                                 onChange=[
                                     SetState("cache_add_args.cache_type", EVENT),
-                                    SetState("cache_connect_result", ""),
+                                    SetState("cache_action_result", ""),
                                     CallTool(
-                                        "switch_default_cache_config",
-                                        arguments={"cache_type": Rx("cache_add_args.cache_type")},
+                                        "switch_default_config",
+                                        arguments={"_class": "cache", "_type": Rx("cache_add_args.cache_type")},
                                         on_success=[
                                             SetState("cache_add_args.cache_host", RESULT["cache_host"]),
                                             SetState("cache_add_args.cache_port", RESULT["cache_port"]),
@@ -736,60 +646,16 @@ def config_app_ui() -> PrefabApp:
                     Input(name="cache_add_args.key_prefix", placeholder="如：key")
 
                 with Column(gap=2):
-                    _status_pairs = [(Rx("cache_add_args.status") == member.value, member) for member in NodeStatus]
-                    status = cond(_status_pairs, default=NodeStatus.Unknown)
-                    status_variant = cond(
-                        [(cond_expr, member.label) for cond_expr, member in _status_pairs],
-                        default=NodeStatus.Unknown.label,
-                    )
+                    status, status_variant = get_status_component_args(prefix="cache", action="add")
 
                     with Row(gap=2, css_class="items-center"):  # type: ignore
                         Label(f"数据库状态：")
                         Badge(status, variant=status_variant)
-                    with If(Rx("cache_connect_result") != ""):
-                        with If(Rx("cache_add_args.status") == NodeStatus.Active):
-                            with Alert(variant="success", icon="circle-check"):
-                                AlertTitle("连接成功")
-                        with If(Rx("cache_add_args.status") == NodeStatus.Inactive):
-                            with Alert(icon="circle-alert"):
-                                AlertTitle("连接失败")
-                                AlertDescription(str(Rx("cache_connect_result")))
-                        with If(Rx("cache_add_args.status") == NodeStatus.AuthFailed):
-                            with Alert(icon="circle-alert"):
-                                AlertTitle("认证失败")
-                                AlertDescription(str(Rx("cache_connect_result")))
-                        with If(Rx("cache_add_args.status") == NodeStatus.Error):
-                            with Alert(variant="destructive", icon="circle-x"):
-                                AlertTitle("错误信息")
-                                AlertDescription(str(Rx("cache_connect_result")))
 
-                    with If(Rx("cache_add_error") != ""):
-                        with Alert(variant="destructive", icon="circle-x"):
-                            AlertTitle("错误信息")
-                            AlertDescription(str(Rx("cache_add_error")))
+                    status_display(prefix="cache", action="add")
 
                 with Row(gap=2, css_class="justify-end"):  # type: ignore
-                    Button(
-                        "测试", variant="outline", button_type="button",
-                        on_click=
-                        [
-                            SetState("dialog_loading", True),
-                            CallTool(
-                                "cache_test_connection",
-                                arguments={"cache_config": Rx("cache_add_args")},
-                                on_success=[
-                                    SetState("cache_connect_result", RESULT.message),
-                                    SetState("cache_add_args.status", RESULT.data.status),
-                                    SetState("dialog_loading", False),
-                                ],
-                                on_error=[
-                                    SetState("cache_connect_result", ERROR),
-                                    SetState("cache_add_args.status", NodeStatus.Error),
-                                    ShowToast(f"缓存连接失败", variant="error"),
-                                    SetState("dialog_loading", False),
-                                ],
-                            ),
-                        ]),
+                    button_test(prefix="cache", action="add")
 
                     Button("添加", variant="outline", button_type="button", on_click=[  # type: ignore
                         SetState("dialog_loading", True),
@@ -800,7 +666,7 @@ def config_app_ui() -> PrefabApp:
                                 "cache_config": Rx("cache_add_args")
                             },
                             on_success=[
-                                SetState("cache_add_error", ""),
+                                SetState("cache_action_result", ""),
                                 SetState("cache_add_args.cache_name", ""),
                                 SetState("cache_add_args", CacheConfig().model_dump()),
                                 CallTool("get_render_info", on_success=[
@@ -810,20 +676,22 @@ def config_app_ui() -> PrefabApp:
                                     SetState("render_info.cache_deactivate_count", RESULT["cache_deactivate_count"]),
                                     SetState("render_info.cache_error_count", RESULT["cache_error_count"]),
                                 ]),
+                                SetState("cache_edit_args.status", RESULT.data.status),
                                 SetState("dialog_loading", False),
-                                ShowToast("数据库添加成功"),
+                                ShowToast("缓存添加成功"),
                                 CloseOverlay(),
                             ],
                             on_error=[
-                                SetState("cache_add_error", ERROR),
+                                SetState("cache_action_result", ERROR),
+                                SetState("cache_edit_args.status", NodeStatus.Error),
                                 SetState("dialog_loading", False),
-                                ShowToast("数据库添加失败"),
+                                ShowToast("缓存添加失败"),
                             ],
                         )
                     ]),
                     Button("取消", variant="destructive", on_click=[
                         CloseOverlay(),
-                        SetState("cache_connect_result", ""),
+                        SetState("cache_action_result", ""),
                         SetState("cache_add_args.cache_name", ""),
                         SetState("cache_add_args", CacheConfig().model_dump()),
                     ], button_type="button")
@@ -841,10 +709,10 @@ def config_app_ui() -> PrefabApp:
                     with Select(disabled=True, placeholder="选择缓存类型...", name="cache_edit_args.cache_type",
                                 onChange=[
                                     SetState("cache_edit_args.cache_type", EVENT),
-                                    SetState("cache_connect_result", ""),
+                                    SetState("cache_action_result", ""),
                                     CallTool(
-                                        "switch_default_cache_config",
-                                        arguments={"cache_type": Rx("cache_edit_args.cache_type")},
+                                        "switch_default_config",
+                                        arguments={"_class": "cache", "_type": Rx("cache_edit_args.cache_type")},
                                         on_success=[
                                             SetState("cache_edit_args.cache_host", RESULT["cache_host"]),
                                             SetState("cache_edit_args.cache_port", RESULT["cache_port"]),
@@ -901,60 +769,16 @@ def config_app_ui() -> PrefabApp:
                     Input(name="cache_edit_args.key_prefix", placeholder="如：key")
 
                 with Column(gap=2):
-                    _status_pairs = [(Rx("cache_edit_args.status") == member.value, member) for member in NodeStatus]
-                    status = cond(_status_pairs, default=NodeStatus.Unknown)
-                    status_variant = cond(
-                        [(cond_expr, member.label) for cond_expr, member in _status_pairs],
-                        default=NodeStatus.Unknown.label,
-                    )
+                    status, status_variant = get_status_component_args(prefix="cache", action="edit")
 
                     with Row(gap=2, css_class="items-center"):  # type: ignore
                         Label(f"数据库状态：")
                         Badge(status, variant=status_variant)
-                    with If(Rx("cache_connect_result") != ""):
-                        with If(Rx("cache_edit_args.status") == NodeStatus.Active):
-                            with Alert(variant="success", icon="circle-check"):
-                                AlertTitle("连接成功")
-                        with If(Rx("cache_edit_args.status") == NodeStatus.Inactive):
-                            with Alert(icon="circle-alert"):
-                                AlertTitle("连接失败")
-                                AlertDescription(str(Rx("cache_connect_result")))
-                        with If(Rx("cache_edit_args.status") == NodeStatus.AuthFailed):
-                            with Alert(icon="circle-alert"):
-                                AlertTitle("认证失败")
-                                AlertDescription(str(Rx("cache_connect_result")))
-                        with If(Rx("cache_edit_args.status") == NodeStatus.Error):
-                            with Alert(variant="destructive", icon="circle-x"):
-                                AlertTitle("错误信息")
-                                AlertDescription(str(Rx("cache_connect_result")))
 
-                    with If(Rx("cache_edit_error") != ""):
-                        with Alert(variant="destructive", icon="circle-x"):
-                            AlertTitle("错误信息")
-                            AlertDescription(str(Rx("cache_edit_error")))
+                    status_display(prefix="cache", action="edit")
 
                 with Row(gap=2, css_class="justify-end"):  # type: ignore
-                    Button(
-                        "测试", variant="outline", button_type="button",
-                        on_click=
-                        [
-                            SetState("dialog_loading", True),
-                            CallTool(
-                                "cache_test_connection",
-                                arguments={"cache_config": Rx("cache_edit_args")},
-                                on_success=[
-                                    SetState("cache_connect_result", RESULT.message),
-                                    SetState("cache_edit_args.status", RESULT.data.status),
-                                    SetState("dialog_loading", False),
-                                ],
-                                on_error=[
-                                    SetState("cache_connect_result", ERROR),
-                                    SetState("cache_edit_args.status", NodeStatus.Error),
-                                    ShowToast(f"缓存连接失败", variant="error"),
-                                    SetState("dialog_loading", False),
-                                ],
-                            ),
-                        ]),
+                    button_test(prefix="cache", action="edit")
 
                     Button("保存", variant="outline", button_type="submit", on_click=[  # type: ignore
                         SetState("dialog_loading", True),
@@ -965,7 +789,7 @@ def config_app_ui() -> PrefabApp:
                                 "cache_config": Rx("cache_edit_args"),
                             },
                             on_success=[
-                                SetState("cache_edit_error", ""),
+                                SetState("cache_action_result", ""),
                                 SetState("cache_edit_args", {}),
                                 CallTool("get_render_info", on_success=[
                                     SetState("render_info.cache_list", RESULT["cache_list"]),
@@ -974,13 +798,15 @@ def config_app_ui() -> PrefabApp:
                                     SetState("render_info.cache_deactivate_count", RESULT["cache_deactivate_count"]),
                                     SetState("render_info.cache_error_count", RESULT["cache_error_count"]),
                                 ]),
+                                SetState("cache_edit_args.status", RESULT.data.status),
                                 SetState("dialog_loading", False),
                                 ShowToast("缓存更新成功"),
                                 SetState("edit_cache_dialog", False),
                                 CloseOverlay(),
                             ],
                             on_error=[
-                                SetState("cache_edit_error", ERROR),
+                                SetState("cache_action_result", ERROR),
+                                SetState("cache_edit_args.status", NodeStatus.Error),
                                 SetState("dialog_loading", False),
                                 ShowToast("缓存更新失败"),
                             ],
@@ -1002,7 +828,7 @@ def config_app_ui() -> PrefabApp:
                                             "cache_config": Rx("cache_edit_args"),
                                         },
                                         on_success=[
-                                            SetState("cache_edit_error", ""),
+                                            SetState("cache_action_result", ""),
                                             SetState("cache_edit_args", {}),
                                             CallTool("get_render_info", on_success=[
                                                 SetState("render_info.cache_list", RESULT["cache_list"]),
@@ -1014,13 +840,15 @@ def config_app_ui() -> PrefabApp:
                                                          RESULT["cache_deactivate_count"]),
                                                 SetState("render_info.cache_error_count", RESULT["cache_error_count"]),
                                             ]),
+                                            SetState("cache_edit_args.status", RESULT.data.status),
                                             SetState("dialog_loading", False),
                                             ShowToast("缓存停用成功"),
                                             CloseOverlay(),
                                             SetState("edit_cache_dialog", False),
                                         ],
                                         on_error=[
-                                            SetState("cache_edit_error", ERROR),
+                                            SetState("cache_action_result", ERROR),
+                                            SetState("cache_edit_args.status", NodeStatus.Error),
                                             SetState("dialog_loading", False),
                                             ShowToast("缓存停用失败"),
                                         ],
@@ -1039,7 +867,7 @@ def config_app_ui() -> PrefabApp:
                                         "delete_cache",
                                         arguments={"cache_name": Rx("cache_edit_args.cache_old_name")},
                                         on_success=[
-                                            SetState("cache_edit_error", ""),
+                                            SetState("cache_action_result", ""),
                                             SetState("cache_edit_args", {}),
                                             CallTool("get_render_info", on_success=[
                                                 SetState("render_info.cache_list", RESULT["cache_list"]),
@@ -1057,7 +885,7 @@ def config_app_ui() -> PrefabApp:
                                             SetState("edit_cache_dialog", False),
                                         ],
                                         on_error=[
-                                            SetState("cache_edit_error", ERROR),
+                                            SetState("cache_action_result", ERROR),
                                             SetState("dialog_loading", False),
                                             ShowToast("缓存删除失败"),
                                         ],
@@ -1066,7 +894,7 @@ def config_app_ui() -> PrefabApp:
                             )
                     Button("取消", variant="destructive", on_click=[
                         CloseOverlay(),
-                        SetState("cache_connect_result", ""),
+                        SetState("cache_action_result", ""),
                         SetState("cache_edit_args", {}),
                     ], button_type="button")
 
@@ -1112,7 +940,7 @@ def config_app_ui() -> PrefabApp:
                                 "status": EVENT.status,
                             }),
                             SetState("edit_db_dialog", True),
-                            SetState("db_connect_result", "")
+                            SetState("db_action_result", "")
                         ]
                     )
 
@@ -1181,7 +1009,7 @@ def config_app_ui() -> PrefabApp:
                                 "cache_type": EVENT.cache_type,
                             }),
                             SetState("edit_cache_dialog", True),
-                            SetState("db_connect_result", "")
+                            SetState("db_action_result", "")
                         ]
                     )
 
@@ -1254,13 +1082,9 @@ def config_app_ui() -> PrefabApp:
             },
             "cache_edit_args": {},
 
-            "db_connect_result": "",
-            "db_add_error": "",
-            "db_edit_error": "",
+            "db_action_result": "",
 
-            "cache_connect_result": "",
-            "cache_add_error": "",
-            "cache_edit_error": "",
+            "cache_action_result": "",
 
             "dialog_loading": False,
 
@@ -1271,21 +1095,7 @@ def config_app_ui() -> PrefabApp:
         },
         on_mount=[
             CallTool("get_render_info", on_success=[
-                SetState("render_info.db_list", RESULT["db_list"]),
-                SetState("render_info.db_online_count", RESULT["db_online_count"]),
-                SetState("render_info.db_offline_count", RESULT["db_offline_count"]),
-                SetState("render_info.db_deactivate_count", RESULT["db_deactivate_count"]),
-                SetState("render_info.db_error_count", RESULT["db_error_count"]),
-                SetState("render_info.db_unknown_count", RESULT["db_unknown_count"]),
-                SetState("render_info.db_total_count", RESULT["db_total_count"]),
-
-                SetState("render_info.cache_list", RESULT["cache_list"]),
-                SetState("render_info.cache_online_count", RESULT["cache_online_count"]),
-                SetState("render_info.cache_offline_count", RESULT["cache_offline_count"]),
-                SetState("render_info.cache_deactivate_count", RESULT["cache_deactivate_count"]),
-                SetState("render_info.cache_error_count", RESULT["cache_error_count"]),
-                SetState("render_info.cache_unknown_count", RESULT["cache_unknown_count"]),
-                SetState("render_info.cache_total_count", RESULT["cache_total_count"]),
+                SetState("render_info", RESULT),
             ])
         ]
     )

@@ -3,9 +3,10 @@ __all__ = ["DatabaseConfig", "CacheConfig", "LoggingConfig"]
 from pathlib import Path
 from typing import Optional, Literal, Tuple
 
+from pydantic import BaseModel, Field, SecretStr
+
 from fund_nav_mcp.utils.enums import NodeStatus
 from fund_nav_mcp.utils.path_utils import PROJECT_ROOT
-from pydantic import BaseModel, Field, SecretStr
 
 
 class DatabaseConfig(BaseModel):
@@ -30,7 +31,7 @@ class DatabaseConfig(BaseModel):
         title="数据库主机",
         description="数据库主机，默认 memory，可选文件路径（路径相对于项目根目录，支持绝对路径），如 .cache/sqlite/default.db"
     )
-    db_port: Optional[int] = Field(default=0, title="数据库端口号", description="数据库端口号，默认 None")
+    db_port: int = Field(default=0, title="数据库端口号", description="数据库端口号，默认 None")
     db_username: Optional[str] = Field(default=None, title="数据库用户名", description="数据库用户名，默认 None")
     db_password: Optional[SecretStr] = Field(default=None, title="数据库密码", description="数据库密码，默认 None")
     db_sql_echo: Literal["open", "close"] = Field(default="close", title="SQL命令输出", description="SQL命令输出")
@@ -55,7 +56,7 @@ class DatabaseConfig(BaseModel):
                 self.db_username, self.db_password, self.db_host, self.db_port
             )
         else:
-            path = Path(self.db_host)
+            path = Path(self.db_host or "")
             if not path.is_absolute():
                 path = PROJECT_ROOT / path
 
@@ -63,7 +64,7 @@ class DatabaseConfig(BaseModel):
             path.parent.mkdir(parents=True, exist_ok=True)
             return f"sqlite:///{path.as_posix()}"
 
-    def db_test_connection(self, timeout: int = 5) -> Tuple[bool, str, NodeStatus]:
+    def test_connection(self, timeout: int = 5) -> Tuple[bool, str, NodeStatus]:
         """
         测试数据库连接，并根据结果更新 self.status。
 
@@ -143,7 +144,7 @@ class DatabaseConfig(BaseModel):
     @staticmethod
     def _classify_pg_error(exc: Exception) -> Tuple[NodeStatus, str]:
         """
-        分类 Postgresql 异常，返回 (状态, 响应消息)。
+        分类 PostgreSQL 异常，返回 (状态, 响应消息)。
 
         Args:
             exc: 数据库 异常对象。
@@ -154,32 +155,32 @@ class DatabaseConfig(BaseModel):
         """
         import psycopg2
         orig = getattr(exc, 'orig', exc)
-        # Postgresql 异常有 pg_code
+        # PostgreSQL 异常有 pg_code
         if isinstance(orig, psycopg2.Error):
-            pg_code = getattr(orig, 'pgcode', None)  # noqa
+            pg_code = getattr(orig, 'pgcode', "")  # noqa
             if pg_code:
                 if pg_code.startswith('08'):
-                    return NodeStatus.Inactive, f"Postgresql 服务未启动或连接被拒绝 (SQLSTATE: {pg_code})"
+                    return NodeStatus.Inactive, f"PostgreSQL 服务未启动或连接被拒绝 (SQLSTATE: {pg_code})"
                 if pg_code == '28P01':
-                    return NodeStatus.AuthFailed, "Postgresql 密码错误"
+                    return NodeStatus.AuthFailed, "PostgreSQL 密码错误"
                 if pg_code == '28000':
-                    return NodeStatus.AuthFailed, "Postgresql 认证失败 (用户或配置错误)"
+                    return NodeStatus.AuthFailed, "PostgreSQL 认证失败 (用户或配置错误)"
                 if pg_code == '53300':
-                    return NodeStatus.Error, "Postgresql 连接数过多"
+                    return NodeStatus.Error, "PostgreSQL 连接数过多"
                 if pg_code in ('3D000', '3F000'):
-                    return NodeStatus.Error, "Postgresql 数据库或 schema 不存在"
+                    return NodeStatus.Error, "PostgreSQL 数据库或 schema 不存在"
         # 非 PG 异常或没有 pg code 的底层错误
         error_msg = str(orig)
         # 连接拒绝 / 服务未启动
         if 'connection refused' in error_msg.lower() or 'is the server running' in error_msg:
-            return NodeStatus.Inactive, "Postgresql 服务未启动或端口不通"
+            return NodeStatus.Inactive, "PostgreSQL 服务未启动或端口不通"
         # 主机名解析失败
         if 'could not translate host name' in error_msg.lower() or 'name or service not known' in error_msg.lower():
-            return NodeStatus.Inactive, "Postgresql 主机地址无法解析，请检查网络配置"
+            return NodeStatus.Inactive, "PostgreSQL 主机地址无法解析，请检查网络配置"
         # 密码认证失败
         if 'password authentication failed' in error_msg.lower():
-            return NodeStatus.AuthFailed, "Postgresql 密码认证失败"
-        return NodeStatus.Error, f"Postgresql 错误: {orig}"
+            return NodeStatus.AuthFailed, "PostgreSQL 密码认证失败"
+        return NodeStatus.Error, f"PostgreSQL 错误: {orig}"
 
     @staticmethod
     def _classify_influx_error(exc: Exception) -> Tuple[NodeStatus, str]:
@@ -212,7 +213,7 @@ class DatabaseConfig(BaseModel):
 
     def _test_rdbms(self, timeout: int) -> None:
         """
-        测试关系型数据库（SQLite/Mysql/Postgresql）连接
+        测试关系型数据库（SQLite/Mysql/PostgreSQL）连接
 
         Args:
             timeout: 连接超时时间（秒）
@@ -348,9 +349,7 @@ class CacheConfig(BaseModel):
         """
         import redis
         # 处理密码（SecretStr -> 明文）
-        password = None
-        if self.cache_pass:
-            password = self.cache_pass.get_secret_value()
+        password = self.cache_pass.get_secret_value() if self.cache_pass else None
 
         # 创建 Redis 客户端（连接池延迟建立实际连接）
         client = redis.Redis(
