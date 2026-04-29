@@ -1,0 +1,25 @@
+name: fund-nav-mcp-dev
+
+services:
+  cache-default:
+    image: redis:8.2.5-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./dev_data/redis/redis_data:/data
+      - ./dev_data/redis/redis.conf:/usr/local/etc/redis/redis.conf
+
+  db-default:
+    image: postgres:18.3-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_DB=fund_nav_mcp_dev
+    volumes:
+      #- ./dev_data/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./dev_data/postgres/pg_data:/var/lib/postgresql/18/docker
+
+networks:
+  fund-nav-mcp-dev:

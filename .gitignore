@@ -80,3 +80,5 @@ uv.lock
 .cache/
 configs/
 *logs/
+
+docker/compose.override.yml

@@ -1,0 +1,28 @@
+name: fund-nav-mcp
+
+services:
+  cache-default:
+    image: ${REDIS_IMAGE}
+    ports:
+      - "${REDIS_PORT}:6379"
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    volumes:
+      - ./data/redis/redis_data:/data
+      - ./data/redis/redis.conf:/usr/local/etc/redis/redis.conf
+
+  db-default:
+    image: ${POSTGRES_IMAGE}
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    environment:
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_DB=${POSTGRES_DB:-postgres}
+      - TZ=${POSTGRES_TZ:-Asia/Shanghai}
+    volumes:
+      #- ./data/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./data/postgres/pg_data:/var/lib/postgresql/18/docker
+
+networks:
+  fund-nav-mcp:
