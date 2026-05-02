@@ -143,8 +143,13 @@ class MCPSettings(BaseSettings):
         return UtilResponse(code=Errcode.UNIQUE_CONFLICT, message=f"{config_type}配置 {name} 已存在，无法添加")
 
     @staticmethod
-    def _update_config(storage: dict, name: str, config: Any, new_name: Optional[str],
-                       config_type: str) -> UtilResponse:
+    def _update_config(
+            storage: dict,
+            name: str,
+            config: Union[DatabaseConfig, CacheConfig],
+            new_name: Optional[str],
+            config_type: str
+    ) -> UtilResponse:
         """
         更新配置项
 
@@ -174,7 +179,7 @@ class MCPSettings(BaseSettings):
         return UtilResponse(code=Errcode.SUCCESS, message=f"{config_type}配置 {name} 修改成功")
 
     @staticmethod
-    def _delete_config(storage: dict, name: str, config_type: str) -> UtilResponse:
+    def _delete_config(storage: Dict[str, Any], name: str, config_type: str) -> UtilResponse:
         """
         删除配置项
 
@@ -193,15 +198,7 @@ class MCPSettings(BaseSettings):
         return UtilResponse(code=Errcode.RECORD_NOT_FOUND, message=f"{config_type}配置 {name} 不存在，无法删除")
 
     def add_database(self, db_name: str, db_config: DatabaseConfig) -> UtilResponse:
-        """
-        添加数据库配置。
-
-        Args:
-            db_name: 数据库名称
-            db_config: 数据库配置
-        Returns:
-            UtilResponse
-        """
+        """添加数据库配置"""
         return self._add_config(self.databases, db_name, db_config, "数据库")
 
     def update_database(self, db_name: str, db_config: DatabaseConfig, new_db_name: str = None) -> UtilResponse:

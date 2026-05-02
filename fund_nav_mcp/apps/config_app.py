@@ -7,9 +7,8 @@ from prefab_ui.actions import SetState, CloseOverlay, ShowToast
 from prefab_ui.app import PrefabApp
 from prefab_ui.components import (
     Card, CardContent, CardHeader, CardTitle,
-    Dashboard, DashboardItem,
-    H2, Muted, H1, DataTable,
-    DataTableColumn, Button, Row, Dialog, Div, Form, Column, Label, Input, Select, SelectOption, Badge, Loader, If,
+    Dashboard, DashboardItem, H2, Muted, H1, DataTable, DataTableColumn,
+    Button, Row, Dialog, Div, Form, Column, Label, Input, Select, SelectOption, Badge, Loader, If,
     Container, Alert, AlertTitle, AlertDescription, Popover, Text, )
 from prefab_ui.rx import RESULT, Rx, EVENT, ERROR
 
@@ -1083,7 +1082,6 @@ def config_app_ui() -> PrefabApp:
             "cache_edit_args": {},
 
             "db_action_result": "",
-
             "cache_action_result": "",
 
             "dialog_loading": False,
