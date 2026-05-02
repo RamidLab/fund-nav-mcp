@@ -61,28 +61,33 @@ class TestMCPSettings:
     def test_env_var_loading(self, mock_config_path, monkeypatch):
         if mock_config_path.exists():
             mock_config_path.unlink()
-        """测试环境变量加载：MCP_TIMEZONE, MCP_DEFAULT_CURRENCY, 嵌套变量"""
+        """测试环境变量加载：MCP_TIMEZONE, MCP_DEFAULT_CURRENCY, 嵌套变量使用真实字段"""
         monkeypatch.setenv("MCP_TIMEZONE", "America/New_York")
         monkeypatch.setenv("MCP_DEFAULT_CURRENCY", "USD")
-        monkeypatch.setenv("MCP_DATABASES__default__URL", "postgresql://test")
+        monkeypatch.setenv("MCP_DATABASES__default__DB_TYPE", "postgresql")
+        monkeypatch.setenv("MCP_DATABASES__default__DB_HOST", "localhost")
+        monkeypatch.setenv("MCP_DATABASES__default__DB_PORT", "5432")
         monkeypatch.setenv("MCP_CACHES__default__TTL_SECONDS", "199")
 
         settings = MCPSettings()
         assert settings.timezone == "America/New_York"
         assert settings.default_currency == "USD"
-        assert settings.databases["default"].url == "postgresql://test"
+        # 验证数据库配置字段
+        assert settings.databases["default"].db_type == "postgresql"
+        assert settings.databases["default"].db_host == "localhost"
+        assert settings.databases["default"].db_port == 5432
         assert settings.caches["default"].ttl_seconds == 199
 
     def test_toml_file_loading(self, mock_config_path, monkeypatch):
-        """测试从 TOML 文件加载配置（优先级高于环境变量）"""
+        """测试从 TOML 文件加载配置（优先级高于环境变量），使用实际字段"""
         monkeypatch.setenv("MCP_CONFIG_PRIORITY", "toml_first")
 
         toml_data = {
             "timezone": "Europe/London",
             "default_currency": "GBP",
             "databases": {
-                "default": {"url": "sqlite:///test.db"},
-                "replica": {"url": "postgresql://replica"}
+                "default": {"db_type": "sqlite", "db_host": "test.db"},
+                "replica": {"db_type": "postgresql", "db_host": "replica", "db_port": 5432}
             },
             "caches": {
                 "default": {"ttl_seconds": 120, "max_size": 100}
@@ -95,7 +100,10 @@ class TestMCPSettings:
 
         assert settings.timezone == "Europe/London"
         assert settings.default_currency == "GBP"
-        assert settings.databases["replica"].url == "postgresql://replica"
+        assert settings.databases["default"].db_type == "sqlite"
+        assert settings.databases["default"].db_host == "test.db"
+        assert settings.databases["replica"].db_type == "postgresql"
+        assert settings.databases["replica"].db_host == "replica"
         assert settings.caches["default"].ttl_seconds == 120
 
     def test_toml_overrides_env(self, mock_config_path, monkeypatch):
@@ -115,21 +123,26 @@ class TestMCPSettings:
         assert settings.default_currency == "AUD"
 
     def test_store_creates_file(self, mock_config_path):
-        """测试 store 方法生成 TOML 文件"""
+        """测试 store 方法生成 TOML 文件，存储实际字段"""
         settings = MCPSettings()
         # 修改一些值
         settings.timezone = "Pacific/Auckland"
         settings.default_currency = "NZD"
-        settings.databases["custom"] = DatabaseConfig(url="mysql://custom")
+        # 使用实际字段构造数据库配置
+        settings.databases["custom"] = DatabaseConfig(
+            db_type="mysql", db_host="custom", db_port=3306
+        )
         settings.store()
 
         assert mock_config_path.exists()
+        import tomllib
         with open(mock_config_path, "rb") as f:
-            import tomllib
             saved = tomllib.load(f)
         assert saved["timezone"] == "Pacific/Auckland"
         assert saved["default_currency"] == "NZD"
-        assert saved["databases"]["custom"]["url"] == "mysql://custom"
+        assert saved["databases"]["custom"]["db_type"] == "mysql"
+        assert saved["databases"]["custom"]["db_host"] == "custom"
+        assert saved["databases"]["custom"]["db_port"] == 3306
 
     def test_init_auto_store_when_file_missing(self, mock_config_path):
         """实例化时如果配置文件不存在，应自动调用 store() 创建文件"""
@@ -137,8 +150,8 @@ class TestMCPSettings:
         _ = MCPSettings()
         assert mock_config_path.exists()
         # 验证文件内容包含默认配置（经过验证器后的）
+        import tomllib
         with open(mock_config_path, "rb") as f:
-            import tomllib
             saved = tomllib.load(f)
         assert "databases" in saved
         assert "default" in saved["databases"]
@@ -148,7 +161,7 @@ class TestMCPSettings:
     def test_set_default_db_with_cache_validator(self, mock_config_path):
         """验证器应在没有数据库/缓存时添加默认值，已有时不覆盖"""
         settings = MCPSettings(
-            databases={"primary": DatabaseConfig(url="sqlite:///primary.db")},
+            databases={"primary": DatabaseConfig(db_type="sqlite", db_host="primary.db")},
             caches={"primary": CacheConfig(ttl_seconds=60)}
         )
         # 验证器不应覆盖已有的
@@ -192,10 +205,10 @@ class TestGlobalFunctions:
         """store_settings() 无参时应保存当前全局实例"""
         settings = get_settings()
         settings.timezone = "Africa/Cairo"
-        store_settings()
+        store_settings(settings)
         assert mock_config_path.exists()
+        import tomllib
         with open(mock_config_path, "rb") as f:
-            import tomllib
             saved = tomllib.load(f)
         assert saved["timezone"] == "Africa/Cairo"
 
@@ -206,15 +219,13 @@ class TestGlobalFunctions:
         settings2 = MCPSettings()
         settings2.timezone = "Antarctica/McMurdo"
         store_settings(settings1)
-        # 验证保存的是 settings1 的内容
+        import tomllib
         with open(mock_config_path, "rb") as f:
-            import tomllib
             saved = tomllib.load(f)
         assert saved["timezone"] == "America/Argentina"
         # 再保存 settings2
         store_settings(settings2)
         with open(mock_config_path, "rb") as f:
-            import tomllib
             saved = tomllib.load(f)
         assert saved["timezone"] == "Antarctica/McMurdo"
 
@@ -241,11 +252,15 @@ class TestSettingsCustomisation:
         assert settings2.timezone == "Env/Zone"
 
     def test_env_nested_delimiter(self, mock_config_path, monkeypatch):
-        """测试环境变量嵌套分隔符 __ 能正确解析嵌套字段"""
+        """测试环境变量嵌套分隔符 __ 能正确解析嵌套字段（使用真实字段名）"""
         monkeypatch.setenv("MCP_CONFIG_PRIORITY", "env_first")
-        monkeypatch.setenv("MCP_DATABASES__replica__URL", "redis://replica")
-        monkeypatch.setenv("MCP_DATABASES__replica__POOL_SIZE", "5")
+        monkeypatch.setenv("MCP_DATABASES__replica__DB_TYPE", "postgresql")
+        monkeypatch.setenv("MCP_DATABASES__replica__DB_HOST", "replica")
+        monkeypatch.setenv("MCP_DATABASES__replica__DB_PORT", "5432")
+        monkeypatch.setenv("MCP_DATABASES__replica__DB_POOL_SIZE", "5")
         settings = MCPSettings()
         assert "replica" in settings.databases
-        assert settings.databases["replica"].url == "redis://replica"
-        assert settings.databases["replica"].pool_size == 5
+        assert settings.databases["replica"].db_type == "postgresql"
+        assert settings.databases["replica"].db_host == "replica"
+        assert settings.databases["replica"].db_port == 5432
+        assert settings.databases["replica"].db_pool_size == 5
