@@ -82,3 +82,4 @@ configs/
 *logs/
 
 docker/compose.override.yml
+docker/*_data/
