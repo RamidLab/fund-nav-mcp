@@ -20,9 +20,9 @@ class CustomStructuredLoggingMiddleware(StructuredLoggingMiddleware):
 
     def __init__(
             self,
-            include_payloads: bool = os.getenv("MCP_LOG_INCLUDE_PAYLOADS", "false") == "true",
-            include_payload_length: bool = os.getenv("MCP_LOG_INCLUDE_PAYLOADS_LENGTH", "false") == "true",
-            estimate_payload_tokens: bool = os.getenv("MCP_LOG_ESTIMATE_PAYLOAD_TOKENS", "false") == "true",
+            include_payloads: bool = os.getenv("MCP_LOG_MID_INCLUDE_PAYLOADS", "false") == "true",
+            include_payload_length: bool = os.getenv("MCP_LOG_MID_INCLUDE_PAYLOADS_LENGTH", "false") == "true",
+            estimate_payload_tokens: bool = os.getenv("MCP_LOG_MID_ESTIMATE_PAYLOAD_TOKENS", "false") == "true",
             methods: Optional[list[str]] = TypeAdapter(Optional[list[str]]).validate_python(
                 os.getenv("MCP_LOG_METHODS")),
             payload_serializer: Optional[Callable[[Any], str]] = None,

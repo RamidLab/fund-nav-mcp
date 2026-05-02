@@ -18,6 +18,9 @@ def load_env():
     if (specific_file := PROJECT_ROOT / f".env.{os.getenv("MCP_ENV", "dev").lower()}").exists():
         load_dotenv(specific_file, override=True)
 
+    if (local := PROJECT_ROOT / ".env.local").exists():
+        load_dotenv(local, override=True)
+
 
 load_env()
 
