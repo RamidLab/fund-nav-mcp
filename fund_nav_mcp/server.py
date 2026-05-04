@@ -10,10 +10,26 @@ import fund_nav_mcp.tools as tools
 from fund_nav_mcp.apps.config_app import config_app
 from fund_nav_mcp.config import setup_settings
 from fund_nav_mcp.middleware import CustomStructuredLoggingMiddleware
-from fund_nav_mcp.utils.log import get_logger
+from fund_nav_mcp.models.schemas import LoggingConfig
+from fund_nav_mcp.utils.log import get_logger, log_basic_config, LogLevel
 
 # 初始化应用配置实例
 setup_settings()
+log_cfg = LoggingConfig(**{x.replace("MCP_LOGGING_", "").lower(): os.getenv(x, None)
+                           for x in os.environ.keys() if x.startswith("MCP_LOGGING")})
+# 初始化日志模块
+log_basic_config(
+    level=LogLevel.from_name(log_cfg.level, LogLevel.INFO),
+    console=log_cfg.console,
+    file=log_cfg.file,
+    file_path=log_cfg.file_path,
+    file_base_name=log_cfg.file_base_name,
+    backup_count=log_cfg.backup_count,
+    max_file_size=log_cfg.max_file_size,
+    json_format=log_cfg.json_format,
+    separate_error_file=log_cfg.separate_error_file,
+    error_file_base_name=log_cfg.error_file_base_name,
+)
 logger = get_logger(__name__)
 
 mcp = FastMCP(
