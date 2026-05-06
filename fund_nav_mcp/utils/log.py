@@ -9,6 +9,7 @@ import json
 import logging
 import logging.handlers
 import multiprocessing
+import pickle
 import signal
 import sys
 import threading
@@ -504,16 +505,30 @@ class MPQueueHandler(logging.Handler):
         self.queue = queue
 
     def emit(self, record: logging.LogRecord) -> None:
-        """将日志记录放入队列。"""
-        if not hasattr(record, 'extra_dict'):
-            extra = {k: v for k, v in record.__dict__.items() if k not in CONST.standard_attrs}
-            if extra:
-                record.extra_dict = extra
+        def safe(value):
+            if isinstance(value, Exception):
+                return str(value)
+            # noinspection PyBroadException
+            try:
+                pickle.dumps(value)
+                return value
+            except Exception:
+                return str(value)
+
+        d = {f: safe(getattr(record, f)) for f in CONST.serializable_fields}
+        if record.exc_info:
+            d['exc_text'] = ''.join(traceback.format_exception(*record.exc_info))
+        extra = getattr(record, 'extra_dict', None)
+        if extra is not None:
+            if isinstance(extra, dict):
+                d['extra_dict'] = {k: safe(v) for k, v in extra.items()}
+            else:
+                d['extra_dict'] = str(extra)
         # noinspection PyBroadException
         try:
-            self.queue.put_nowait(_record_to_dict(record))
+            self.queue.put_nowait(d)
         except Exception:
-            pass
+            sys.stderr.write("WARNING: Failed to put log record into queue\n")
 
 
 def _create_handlers(config: Dict[str, Any], file_base_name: str, level: int) -> List[logging.Handler]:
