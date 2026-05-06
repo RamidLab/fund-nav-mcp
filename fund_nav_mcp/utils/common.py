@@ -18,6 +18,5 @@ def check_result(result: UtilResponse) -> UtilResponse:
         通用响应
     """
     if result.code not in {Errcode.SUCCESS, Errcode.DONE, Errcode.CONTINUE, Errcode.PROCESS}:
-        logger.debug(result)
         raise Exception(result.message)
     return result

@@ -37,7 +37,6 @@ def cond(pairs: List[tuple[Rx, Any]], default: Any = None) -> Any:
         匹配结果
     """
     expr = default
-    logger.debug(f"cond pairs: {pairs}")
     for _cond, val in reversed(pairs):
         expr = _cond.then(val, expr)
     return expr
@@ -88,7 +87,6 @@ def get_render_info() -> Dict[str, Any]:
                     if isinstance(token, SecretStr) else token
             data.append(item)
             statuses.append(item.get("status"))
-        logger.debug(f"prepare_config_list {name_key}: {data}")
         return data, Counter(statuses)
 
     def _calc_counts(statuses: Counter[NodeStatus], prefix: str) -> Dict[str, Any]:
@@ -190,6 +188,16 @@ def switch_default_config(_class: str, _type: str, config: Dict[str, Any]) -> Di
     description="测试连接"
 )
 def test_connection(_class: str, config: Dict[str, Any]) -> UtilResponse:
+    """
+    测试连接
+
+    Args:
+        _class: 配置类型，"db" 或 "cache"
+        config: 配置字典
+
+    Returns:
+        连接结果
+    """
     settings = get_settings()
     if _class == "db":
         _config = DatabaseConfig.model_validate(config)
@@ -203,6 +211,7 @@ def test_connection(_class: str, config: Dict[str, Any]) -> UtilResponse:
 
 
 def loder_overlay() -> None:
+    """显示加载中弹窗"""
     with If(Rx("dialog_loading")):
         with Container(
                 css_class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"):  # type: ignore
@@ -210,6 +219,13 @@ def loder_overlay() -> None:
 
 
 def status_display(prefix: str, action: str) -> None:
+    """
+    显示连接状态
+
+    Args:
+        prefix: 配置前缀，"db" 或 "cache"
+        action: 操作类型，"add" 或 "update"
+    """
     with If(Rx(f"{prefix}_action_result") != ""):
         with If(Rx(f"{prefix}_{action}_args.status") == NodeStatus.Active):
             with Alert(variant="success", icon="circle-check"):
@@ -229,6 +245,13 @@ def status_display(prefix: str, action: str) -> None:
 
 
 def button_test(prefix: str, action: str) -> None:
+    """
+    显示测试按钮
+
+    Args:
+        prefix: 配置前缀，"db" 或 "cache"
+        action: 操作类型，"add" 或 "update"
+    """
     Button(
         "测试", variant="outline", button_type="button",
         on_click=
@@ -253,6 +276,15 @@ def button_test(prefix: str, action: str) -> None:
 
 
 def get_status_component_args(prefix: str, action: str) -> Tuple[str, str]:
+    """
+    获取连接状态组件的参数
+    Args:
+        prefix: 配置前缀，"db" 或 "cache"
+        action: 操作类型，"add" 或 "update"
+
+    Returns:
+        连接状态和状态标签
+    """
     _status_pairs = [(Rx(f"{prefix}_{action}_args.status") == member.value, member) for member in NodeStatus]
     status = cond(_status_pairs, default=NodeStatus.Unknown)
     status_variant = cond(
