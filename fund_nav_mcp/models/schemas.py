@@ -1,138 +1,172 @@
-__all__ = ["DatabaseConfig", "CacheConfig", "LoggingConfig"]
+__all__ = [
+    "DatabaseConfig", "CacheConfig",
+    "SQLiteConfig", "MySQLConfig", "PostgresqlConfig", "InfluxDBConfig", "RedisConfig",
+    "LoggingConfig"
+]
 
+from functools import lru_cache
 from pathlib import Path
-from typing import Optional, Literal, Tuple
+from typing import Optional, Literal, Tuple, TypeVar, Annotated, Union
 
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import BaseModel, Field, SecretStr, TypeAdapter
 
+from fund_nav_mcp.models import StorageConfigBase
 from fund_nav_mcp.utils.enums import NodeStatus
 from fund_nav_mcp.utils.path_utils import PROJECT_ROOT
 
+T = TypeVar("T")
 
-class DatabaseConfig(BaseModel):
-    """
-    数据库配置
 
-    Args:
-        db_type: 数据库类型，默认 sqlite，可选 sqlite, mysql, postgresql, influxdb
-        db_host: 数据库主机，默认 None
-        db_port: 数据库端口号，默认 None
-        db_username: 数据库用户名，默认 None
-        db_password: 数据库密码，默认 None
-        db_sql_echo: 是否开启 SQL 命令输出，默认 False
-        db_pool_size: 连接池大小，默认 5
-        status: 数据库状态，默认 Active
-    """
-    db_type: Literal[
-        "sqlite", "mysql", "postgresql", "influxdb"
-    ] = Field(default="sqlite", title="数据库类型", description="数据库类型，默认 sqlite")
-    db_host: Optional[str] = Field(
-        default="memory",
-        title="数据库主机",
-        description="数据库主机，默认 memory，可选文件路径（路径相对于项目根目录，支持绝对路径），如 .cache/sqlite/default.db"
+@lru_cache(maxsize=1)
+def _get_db_adapter() -> TypeAdapter:
+    """使用单例模式获取数据库适配器"""
+    return TypeAdapter(
+        Annotated[
+            Union[
+                Annotated[SQLiteConfig, "sqlite"],
+                Annotated[MySQLConfig, "mysql"],
+                Annotated[PostgresqlConfig, "postgresql"],
+                Annotated[InfluxDBConfig, "influxdb"],
+            ],
+            Field(discriminator="db_type")
+        ]
     )
-    db_port: int = Field(default=0, title="数据库端口号", description="数据库端口号，默认 None")
-    db_username: Optional[str] = Field(default=None, title="数据库用户名", description="数据库用户名，默认 None")
-    db_password: Optional[SecretStr] = Field(default=None, title="数据库密码", description="数据库密码，默认 None")
-    db_sql_echo: Literal["open", "close"] = Field(default="close", title="SQL命令输出", description="SQL命令输出")
-    db_pool_size: int = Field(default=5, title="连接池大小", description="连接池大小，默认 5")
-    status: NodeStatus = Field(default=NodeStatus.Unknown, title="数据库状态", description="数据库状态，默认 Unknown")
+
+
+@lru_cache(maxsize=1)
+def _get_cache_adapter() -> TypeAdapter:
+    """使用单例模式获取缓存适配器"""
+    return TypeAdapter(
+        Annotated[
+            Union[
+                Annotated[RedisConfig, "redis"],
+            ],
+            Field(discriminator="cache_type")
+        ]
+    )
+
+
+class DatabaseConfig(StorageConfigBase):
+    """数据库配置基类"""
+    db_type: Literal["sqlite", "mysql", "postgresql", "influxdb"] = Field(default="sqlite", title="数据库类型")
+    db_host: str = Field(default="memory", title="数据库主机")
+    db_port: int = Field(default=80, title="数据库端口")
+    db_sql_echo: Literal["open", "close"] = Field(default="close", title="SQL命令输出")
+    db_pool_size: int = Field(default=5, title="连接池大小")
+
+    status: NodeStatus = Field(default=NodeStatus.Unknown, title="数据库状态")
+
+    def __new__(cls, **data):
+        if cls is DatabaseConfig:
+            adapter = _get_db_adapter()
+            data.setdefault("db_type", "sqlite")
+            return adapter.validate_python(data)
+        return object.__new__(cls)
+
+    @classmethod
+    def model_validate(cls, obj, **kwargs):
+        """自定义模型验证方法，根据类型选择数据库适配器"""
+        if cls is DatabaseConfig:
+            return _get_db_adapter().validate_python(obj, **kwargs)
+        return super().model_validate(obj, **kwargs)
 
     @property
-    def db_url(self) -> str:
-        """生成 SQLAlchemy 连接 URL，并自动创建父目录"""
-        if self.db_type == "sqlite" and self.db_host == "memory":
-            return "sqlite:///:memory:"
-        elif self.db_type == "mysql" and self.db_port > 0:
-            return "mysql+pymysql://{}:{}@{}:{}".format(
-                self.db_username, self.db_password, self.db_host, self.db_port
-            )
-        elif self.db_type == "postgresql" and self.db_port > 0:
-            return "postgresql://{}:{}@{}:{}".format(
-                self.db_username, self.db_password, self.db_host, self.db_port
-            )
-        elif self.db_type == "influxdb" and self.db_port > 0:
-            return "influxdb://{}:{}@{}:{}".format(
-                self.db_username, self.db_password, self.db_host, self.db_port
-            )
-        else:
-            path = Path(self.db_host or "")
-            if not path.is_absolute():
-                path = PROJECT_ROOT / path
+    def url(self) -> str:
+        raise NotImplementedError("url 属性未实现")
 
-            # 自动创建父目录
-            path.parent.mkdir(parents=True, exist_ok=True)
-            return f"sqlite:///{path.as_posix()}"
+    def _do_test(self, timeout: int) -> None:
+        raise NotImplementedError("_do_test 方法未实现")
 
-    def test_connection(self, timeout: int = 5) -> Tuple[bool, str, NodeStatus]:
-        """
-        测试数据库连接，并根据结果更新 self.status。
+    def _classify_error(self, exc: Exception) -> Tuple[NodeStatus, str]:
+        raise NotImplementedError("_classify_error 方法未实现")
 
-        Args:
-            timeout: 连接超时秒数，仅对远程数据库有效。
 
-        Returns:
-            - 连接成功返回 True，否则 False。
-            - 错误消息（如果有）
-            - 数据库状态
-        """
-        try:
-            if self.db_type == "influxdb":
-                self._test_influxdb(timeout)
-            else:
-                self._test_rdbms(timeout)
+class SQLiteConfig(DatabaseConfig):
+    """SQLite 数据库配置"""
+    db_type: Literal["sqlite"] = "sqlite"
+    db_host: str = Field(
+        default="memory",
+        title="数据库主机",
+        min_length=1,
+        description="默认 memory，Sqlite 数据库可选文件路径（路径相对于项目根目录，支持绝对路径）"
+    )
 
-            self.status = NodeStatus.Active
-            return True, "", self.status
-        except Exception as e:
-            status, message = self._classify_db_error(e)
-            self.status = status
-            return False, message, self.status
+    def _build_url(self, async_driver: bool = True) -> str:
+        """内部方法：根据需要返回同步或异步连接字符串"""
+        prefix = "sqlite+aiosqlite" if async_driver else "sqlite"
+        if self.db_host == "memory":
+            return f"{prefix}:///:memory:"
+        path = Path(self.db_host or "")
+        if not path.is_absolute():
+            path = PROJECT_ROOT / path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return f"{prefix}:///{path.as_posix()}"
 
-    def _classify_db_error(self, exc: Exception) -> Tuple[NodeStatus, str]:
-        """
-        根据数据库类型和异常特征，返回 (状态, 用户友好消息)。
+    @property
+    def url(self) -> str:
+        return self._build_url(async_driver=True)
 
-        Args:
-            exc: 数据库异常对象。
+    def _do_test(self, timeout: int) -> None:
+        from sqlalchemy import create_engine, text as sa_text
+        engine = create_engine(
+            self._build_url(async_driver=False),
+            echo=self.db_sql_echo == "open",
+        )
+        with engine.connect() as conn:
+            conn.execute(sa_text("SELECT 1"))
+        engine.dispose()
 
-        Returns:
-            - 数据库状态
-            - 响应消息
-        """
-        if self.db_type == "mysql":
-            return self._classify_mysql_error(exc)
-        elif self.db_type == "postgresql":
-            return self._classify_pg_error(exc)
-        elif self.db_type == "influxdb":
-            return self._classify_influx_error(exc)
-        else:
-            # SQLite 或其他
-            return NodeStatus.Error, f"数据库错误: {getattr(exc, 'orig', exc)}"
+    # TODO:后面其他几个都同步sqlite现在的更新
+    def _classify_error(self, exc: Exception) -> Tuple[NodeStatus, str]:
+        return NodeStatus.Error, f"SQLite 错误: {getattr(exc, 'orig', exc)}"
+
+
+class MySQLConfig(DatabaseConfig):
+    """MySQL 数据库配置"""
+    db_type: Literal["mysql"] = "mysql"
+    db_host: str = Field(default="127.0.0.1", title="数据库主机")
+    db_port: int = Field(default=3306, title="数据库端口号")
+    db_username: str = Field(default="root", title="数据库用户名")
+    db_password: SecretStr = Field(default="root", title="数据库密码")
+    db_main: Optional[str] = Field(default=None, title="数据库主键")
+
+    def _build_url(self, async_driver: bool = True) -> str:
+        driver = "asyncmy" if async_driver else "pymysql"
+        user = self.db_username
+        pwd = self.db_password.get_secret_value()
+        base = f"mysql+{driver}://{user}:{pwd}@{self.db_host}:{self.db_port}"
+        if self.db_main:
+            base += f"/{self.db_main}"
+        return base
+
+    @property
+    def url(self) -> str:
+        return self._build_url(async_driver=True)
+
+    def _do_test(self, timeout: int) -> None:
+        from sqlalchemy import create_engine, text as sa_text
+        engine = create_engine(
+            self._build_url(async_driver=False),
+            echo=self.db_sql_echo == "open",
+            connect_args={"connect_timeout": timeout}
+        )
+        with engine.connect() as conn:
+            conn.execute(sa_text("SELECT 1"))
+        engine.dispose()
+
+    def _classify_error(self, exc: Exception) -> Tuple[NodeStatus, str]:
+        return self._classify_mysql_error(exc)
 
     @staticmethod
     def _classify_mysql_error(exc: Exception) -> Tuple[NodeStatus, str]:
-        """
-        分类 MySQL 异常，返回 (状态, 响应消息)。
-
-        Args:
-            exc: 数据库 异常对象。
-
-        Returns:
-            - 数据库状态
-            - 响应消息
-        """
         import pymysql
         orig = getattr(exc, 'orig', exc)
         if isinstance(orig, pymysql.err.OperationalError):
             code = orig.args[0] if orig.args else None
-            # 2003: Can't connect, 2002: Socket error (UNIX)
             if code in (2003, 2002):
                 return NodeStatus.Inactive, "MySQL 服务未启动或主机/端口不可达"
-            # 1045: Access denied (password wrong)
             if code == 1045:
                 return NodeStatus.AuthFailed, "MySQL 用户名或密码错误"
-            # 1044: Access to database denied
             if code == 1044:
                 return NodeStatus.AuthFailed, "MySQL 用户无权访问该数据库"
         elif isinstance(orig, pymysql.err.InternalError):
@@ -141,21 +175,47 @@ class DatabaseConfig(BaseModel):
             return NodeStatus.Error, f"MySQL 语法/配置错误: {orig}"
         return NodeStatus.Error, f"MySQL 错误: {orig}"
 
+
+class PostgresqlConfig(DatabaseConfig):
+    """PostgreSQL 数据库配置"""
+    db_type: Literal["postgresql"] = "postgresql"
+    db_host: str = Field(default="127.0.0.1", title="数据库主机")
+    db_port: int = Field(default=5432, title="数据库端口号")
+    db_username: str = Field(default="postgres", title="数据库用户名")
+    db_password: SecretStr = Field(default="postgres", title="数据库密码")
+    db_main: Optional[str] = Field(default=None, title="数据库主键")
+
+    def _build_url(self, async_driver: bool = True) -> str:
+        driver = "asyncpg" if async_driver else "psycopg2"
+        user = self.db_username
+        pwd = self.db_password.get_secret_value()
+        base = f"postgresql+{driver}://{user}:{pwd}@{self.db_host}:{self.db_port}"
+        if self.db_main:
+            base += f"/{self.db_main}"
+        return base
+
+    @property
+    def url(self) -> str:
+        return self._build_url(async_driver=True)
+
+    def _do_test(self, timeout: int) -> None:
+        from sqlalchemy import create_engine, text as sa_text
+        engine = create_engine(
+            self._build_url(async_driver=False),
+            echo=self.db_sql_echo == "open",
+            connect_args={"connect_timeout": timeout}
+        )
+        with engine.connect() as conn:
+            conn.execute(sa_text("SELECT 1"))
+        engine.dispose()
+
+    def _classify_error(self, exc: Exception) -> Tuple[NodeStatus, str]:
+        return self._classify_pg_error(exc)
+
     @staticmethod
     def _classify_pg_error(exc: Exception) -> Tuple[NodeStatus, str]:
-        """
-        分类 PostgreSQL 异常，返回 (状态, 响应消息)。
-
-        Args:
-            exc: 数据库 异常对象。
-
-        Returns:
-            - 数据库状态
-            - 响应消息
-        """
         import psycopg2
         orig = getattr(exc, 'orig', exc)
-        # PostgreSQL 异常有 pg_code
         if isinstance(orig, psycopg2.Error):
             pg_code = getattr(orig, 'pgcode', "")  # noqa
             if pg_code:
@@ -169,128 +229,96 @@ class DatabaseConfig(BaseModel):
                     return NodeStatus.Error, "PostgreSQL 连接数过多"
                 if pg_code in ('3D000', '3F000'):
                     return NodeStatus.Error, "PostgreSQL 数据库或 schema 不存在"
-        # 非 PG 异常或没有 pg code 的底层错误
         error_msg = str(orig)
-        # 连接拒绝 / 服务未启动
         if 'connection refused' in error_msg.lower() or 'is the server running' in error_msg:
             return NodeStatus.Inactive, "PostgreSQL 服务未启动或端口不通"
-        # 主机名解析失败
         if 'could not translate host name' in error_msg.lower() or 'name or service not known' in error_msg.lower():
             return NodeStatus.Inactive, "PostgreSQL 主机地址无法解析，请检查网络配置"
-        # 密码认证失败
         if 'password authentication failed' in error_msg.lower():
             return NodeStatus.AuthFailed, "PostgreSQL 密码认证失败"
         return NodeStatus.Error, f"PostgreSQL 错误: {orig}"
 
+
+class InfluxDBConfig(DatabaseConfig):
+    """InfluxDB 配置"""
+    db_type: Literal["influxdb"] = Field(default="influxdb", title="数据库类型")
+    db_host: str = Field(default="localhost", title="数据库主机")
+    db_port: int = Field(default=8086, title="数据库端口")
+    db_ssl_enabled: bool = Field(default=False, title="是否启用 HTTPS")
+    db_main: Optional[str] = Field(..., title="默认桶")
+    influxdb_org: str = Field(..., title="组织")
+    influxdb_token: SecretStr = Field(..., alias="influxdb_token", title="Token")
+
+    @property
+    def url(self) -> str:
+        scheme = "https" if self.db_ssl_enabled else "http"
+        return f"{scheme}://{self.db_host}:{self.db_port}"
+
+    def _do_test(self, timeout: int) -> None:
+        from influxdb_client import InfluxDBClient
+
+        tok = self.influxdb_token.get_secret_value()
+        with InfluxDBClient(url=self.url, token=tok, org=self.influxdb_org,
+                            timeout=timeout * 1000) as client:
+            if not client.ping():
+                raise ConnectionError("InfluxDB ping 失败")
+
+    def _classify_error(self, exc: Exception) -> Tuple[NodeStatus, str]:
+        return self._classify_influx_error(exc)
+
     @staticmethod
     def _classify_influx_error(exc: Exception) -> Tuple[NodeStatus, str]:
-        """
-        分类 InfluxDB 异常，返回 (状态, 响应消息)。
-
-        Args:
-            exc: 数据库 异常对象。
-
-        Returns:
-            - 数据库状态
-            - 响应消息
-        """
         import requests
         from influxdb_client.rest import ApiException
 
         orig = getattr(exc, 'orig', exc)
-        # 连接被拒绝、主机不可达
         if isinstance(orig, (requests.ConnectionError, ConnectionRefusedError, ConnectionError)):
             return NodeStatus.Inactive, "InfluxDB 服务未启动或网络不可达"
         if isinstance(orig, (requests.Timeout, TimeoutError)):
             return NodeStatus.Inactive, "InfluxDB 连接超时"
         if isinstance(orig, ApiException):
             if orig.status == 401:
-                return NodeStatus.AuthFailed, "InfluxDB 认证失败 (Token 或用户名密码错误)"
+                return NodeStatus.AuthFailed, "InfluxDB 认证失败 (Token 错误)"
             if orig.status == 403:
                 return NodeStatus.AuthFailed, "InfluxDB 无权限访问"
             return NodeStatus.Error, f"InfluxDB API 错误: HTTP {orig.status}"
         return NodeStatus.Error, f"InfluxDB 错误: {exc}"
 
-    def _test_rdbms(self, timeout: int) -> None:
-        """
-        测试关系型数据库（SQLite/Mysql/PostgreSQL）连接
 
-        Args:
-            timeout: 连接超时时间（秒）
+class CacheConfig(StorageConfigBase):
+    """缓存配置基类（自动注册子类）"""
+    cache_type: Literal["redis"] = Field(default="redis", title="缓存类型")
+    cache_host: str = Field(default="127.0.0.1", title="缓存主机")
+    cache_port: int = Field(default=6379, title="缓存绑定端口")
 
-        Returns:
-            None
-        """
-        from sqlalchemy import create_engine, text as sa_text
-        # 获取明文密码（需处理 SecretStr）
-        pwd = self.db_password.get_secret_value() if isinstance(self.db_password, SecretStr) else self.db_password
+    status: NodeStatus = Field(default=NodeStatus.Unknown, title="缓存服务状态")
 
-        if self.db_type == "sqlite":
-            # SQLite 无需密码和网络参数
-            engine = create_engine(self.db_url, echo=bool(self.db_sql_echo == "open"))
-        elif self.db_type == "mysql":
-            engine = create_engine(
-                f"mysql+pymysql://{self.db_username}:{pwd}@{self.db_host}:{self.db_port}",
-                echo=bool(self.db_sql_echo == "open"),
-                connect_args={"connect_timeout": timeout}
-            )
-        elif self.db_type == "postgresql":
-            engine = create_engine(
-                f"postgresql://{self.db_username}:{pwd}@{self.db_host}:{self.db_port}",
-                echo=bool(self.db_sql_echo == "open"),
-                connect_args={"connect_timeout": timeout}
-            )
-        else:
-            raise ValueError(f"不支持的数据库类型: {self.db_type}")
+    def __new__(cls, **data):
+        if cls is CacheConfig:
+            adapter = _get_cache_adapter()
+            data.setdefault("cache_type", "redis")
+            return adapter.validate_python(data)
+        return object.__new__(cls)
 
-        # 尝试获取连接并立即关闭
-        with engine.connect() as conn:
-            conn.execute(sa_text("SELECT 1"))
-        engine.dispose()
+    @classmethod
+    def model_validate(cls, obj, **kwargs):
+        """自定义模型验证方法，根据类型选择缓存适配器"""
+        if cls is CacheConfig:
+            return _get_cache_adapter().validate_python(obj, **kwargs)
+        return super().model_validate(obj, **kwargs)
 
-    def _test_influxdb(self, timeout: int) -> None:
-        """
-        测试 InfluxDB 连接（支持 1.x 和 2.x）
+    @property
+    def url(self) -> str:
+        raise NotImplementedError("url 属性未实现")
 
-        Args:
-            timeout: 连接超时时间（秒）
+    def _do_test(self, timeout: int) -> None:
+        raise NotImplementedError("_do_test 方法未实现")
 
-        Returns:
-            None
-        """
-        from influxdb_client import InfluxDBClient
-        pwd = self.db_password.get_secret_value() if isinstance(self.db_password, SecretStr) else self.db_password
-        host = self.db_host
-        port = self.db_port
-
-        try:
-            url = f"http://{host}:{port}"  # noqa
-            with InfluxDBClient(url=url, username=self.db_username, password=pwd, timeout=timeout * 1000) as client:
-                client.ping()
-            return
-        except ImportError:
-            pass
-
-        import requests
-        base_url = f"http://{host}:{port}"  # noqa
-        auth = (self.db_username, pwd) if self.db_username and pwd else None
-
-        # InfluxDB 1.x 使用 /ping，2.x 使用 /health
-        for endpoint in ("/health", "/ping"):
-            try:
-                resp = requests.get(
-                    f"{base_url}{endpoint}",
-                    auth=auth,
-                    timeout=timeout
-                )
-                if resp.ok:
-                    return
-            except requests.RequestException:
-                continue
-        raise ConnectionError(f"无法连接到 InfluxDB: {base_url}")
+    def _classify_error(self, exc: Exception) -> Tuple[NodeStatus, str]:
+        raise NotImplementedError("_classify_error 方法未实现")
 
 
-class CacheConfig(BaseModel):
+class RedisConfig(CacheConfig):
     """
     缓存配置
 
@@ -302,43 +330,31 @@ class CacheConfig(BaseModel):
         databases: 逻辑数据库数量，默认 16
         ttl_seconds: 缓存过期时间，默认 300 秒
         max_size: 缓存最大大小，默认 1024MB
-        cache_pool_size: 连接池大小，默认 5
         cache_type: 缓存类型，默认 memory，可选 memory, redis
         status: 缓存服务状态，默认 Unknown
     """
-    cache_host: str = Field(default="127.0.0.1", title="缓存主机", description="缓存主机")
-    cache_port: int = Field(default=6379, title="缓存绑定端口", description="缓存绑定端口")
-    cache_pass: Optional[SecretStr] = Field(default=None, title="缓存密码", description="缓存密码")
-    timeout: int = Field(default=5, title="缓存超时时间（秒）", description="缓存超时时间（秒）")
-    main_db: int = Field(default=0, title="主数据库索引", description="默认数据库索引")
+    cache_type: Literal["redis"] = Field(default="redis", title="缓存类型")
+    cache_host: str = Field(default="127.0.0.1", title="缓存主机")
+    cache_port: int = Field(default=6379, title="缓存绑定端口")
+    cache_pass: Optional[SecretStr] = Field(default=None, title="缓存密码")
+    cache_main: int = Field(default=0, title="主数据库索引")
     databases: int = Field(default=16, title="逻辑数据库数量", description="默认16个，索引从0到15")
+    timeout: int = Field(default=5, title="缓存超时时间（秒）", description="缓存超时时间（秒）")
     key_prefix: Optional[str] = Field(default=None, title="键前缀", description="键前缀，默认空字符串")
-    ttl_seconds: int = Field(default=300, title="缓存过期时间（秒）", description="缓存过期时间（秒）")
-    max_size: int = Field(default=1024, title="缓存最大大小（MB）", description="缓存最大大小（MB）")
-    cache_pool_size: int = Field(default=5, title="连接池大小", description="连接池大小，默认 5")
-    cache_type: Literal["redis"] = Field(default="redis", title="缓存类型", description="可选 redis")
-    status: NodeStatus = Field(default=NodeStatus.Unknown, title="缓存服务状态", description="缓存服务状态")
+    ttl_seconds: int = Field(default=300, title="缓存过期时间（秒）")
+    max_size: int = Field(default=1024, title="缓存最大大小（MB）")
+    cache_pool_size: int = Field(
+        default=10,
+        title="连接池最大连接数",
+        description="根据预估的并发量调整，默认10。对于Async Web应用，建议设为5-20。"
+    )
 
-    def test_connection(self, timeout: int = 5) -> Tuple[bool, str, NodeStatus]:
-        """
-        测试 Redis 连接，并根据结果更新 self.config.status。
+    @property
+    def url(self) -> str:
+        auth = f"{self.cache_pass.get_secret_value()}@" if self.cache_pass else ""
+        return f"redis://{auth}{self.cache_host}:{self.cache_port}/{self.cache_main}"
 
-        Args:
-            timeout: 连接超时秒数（覆盖 config.timeout）
-
-        Returns:
-            tuple: (成功标志, 错误消息, 状态枚举)
-        """
-        try:
-            self._test_redis(timeout)
-            self.status = NodeStatus.Active
-            return True, "", self.status
-        except Exception as e:
-            status, message = self._classify_cache_error(e)
-            self.status = status
-            return False, message, self.status
-
-    def _test_redis(self, timeout: int) -> None:
+    def _do_test(self, timeout: int) -> None:
         """
         执行 Redis 连接测试，包括 ping 和数据库选择
 
@@ -365,7 +381,7 @@ class CacheConfig(BaseModel):
         client.ping()
 
         # 测试目标数据库是否可用（有效索引范围 0 ~ databases-1）
-        cache_index = self.main_db
+        cache_index = self.cache_main
         if cache_index < 0 or cache_index >= self.databases:
             raise ValueError(
                 f"数据库索引 {cache_index} 超出允许范围 [0, {self.databases - 1}]，"
@@ -384,13 +400,16 @@ class CacheConfig(BaseModel):
         # 关闭连接（可选，Redis 连接会随对象销毁自动释放）
         client.close()
 
+    def _classify_error(self, exc: Exception) -> Tuple[NodeStatus, str]:
+        return self._classify_redis_error(exc)
+
     @staticmethod
-    def _classify_cache_error(exc: Exception) -> Tuple[NodeStatus, str]:
+    def _classify_redis_error(exc: Exception) -> Tuple[NodeStatus, str]:
         """
-        分类缓存异常，返回状态枚举和消息。
+        分类 Redis 异常，返回状态枚举和消息。
 
         Args:
-            exc: 缓存异常对象
+            exc: Redis 异常对象
         Returns:
             - 状态枚举
             - 响应消息

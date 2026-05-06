@@ -93,8 +93,7 @@ def add_database(db_name: str, db_config: Dict[str, Any]) -> UtilResponse:
         通用响应
     """
     settings = get_settings()
-    _db_config = DatabaseConfig.model_validate(db_config)
-    result = settings.add_database(db_name, _db_config)
+    result = settings.add_database(db_name, DatabaseConfig.model_validate(db_config))
     settings.store()
     return check_result(result)
 
@@ -118,8 +117,7 @@ def add_cache(cache_name: str, cache_config: Dict[str, Any]) -> UtilResponse:
         通用响应
     """
     settings = get_settings()
-    _cache_config = CacheConfig.model_validate(cache_config)
-    result = settings.add_cache(cache_name, _cache_config)
+    result = settings.add_cache(cache_name, CacheConfig.model_validate(cache_config))
     settings.store()
     return check_result(result)
 
@@ -145,8 +143,10 @@ def update_database(db_name: str, db_config: Dict[str, Any]) -> UtilResponse:
     settings = get_settings()
     db_config["status"] = db_config.get("status", NodeStatus.Unknown)
     new_db_name = db_config["db_name"]
-    _db_config = DatabaseConfig.model_validate(db_config)
-    result = settings.update_database(db_name, _db_config, new_db_name=new_db_name if db_name != new_db_name else None)
+    result = settings.update_database(
+        db_name, DatabaseConfig.model_validate(db_config),
+        new_db_name=new_db_name if db_name != new_db_name else None
+    )
     settings.store()
     return check_result(result)
 
@@ -172,9 +172,8 @@ def update_cache(cache_name: str, cache_config: Dict[str, Any]) -> UtilResponse:
     settings = get_settings()
     cache_config["status"] = cache_config.get("status", NodeStatus.Unknown)
     new_cache_name = cache_config["cache_name"]
-    _cache_config = CacheConfig.model_validate(cache_config)
     result = settings.update_cache(
-        cache_name, _cache_config,
+        cache_name, CacheConfig.model_validate(cache_config),
         new_cache_name=new_cache_name if cache_name != new_cache_name else None
     )
     settings.store()
@@ -188,18 +187,19 @@ def update_cache(cache_name: str, cache_config: Dict[str, Any]) -> UtilResponse:
     description="删除数据库配置",
     tags={"config_tool"}
 )
-def delete_database(db_name: str) -> UtilResponse:
+def delete_database(db_name: str, db_config: Dict[str, Any]) -> UtilResponse:
     """
     删除数据库配置
 
     Args:
         db_name: 数据库名称
+        db_config: 数据库配置字典
 
     Returns:
         通用响应
     """
     settings = get_settings()
-    result = settings.delete_database(db_name)
+    result = settings.delete_database(db_name, DatabaseConfig.model_validate(db_config))
     settings.store()
     return check_result(result)
 
@@ -211,17 +211,18 @@ def delete_database(db_name: str) -> UtilResponse:
     description="删除缓存配置",
     tags={"config_tool"}
 )
-def delete_cache(cache_name: str) -> UtilResponse:
+def delete_cache(cache_name: str, cache_config: Dict[str, Any]) -> UtilResponse:
     """
     删除缓存配置
 
     Args:
         cache_name: 缓存名称
+        cache_config: 缓存配置字典
 
     Returns:
         通用响应
     """
     settings = get_settings()
-    result = settings.delete_cache(cache_name)
+    result = settings.delete_cache(cache_name, CacheConfig.model_validate(cache_config))
     settings.store()
     return check_result(result)

@@ -3,14 +3,15 @@ from __future__ import annotations
 __all__ = ['MCPSettings', 'setup_settings', 'get_settings', 'store_settings']
 
 import os
-from typing import Any, Dict, Mapping, cast, Union, Optional
+from typing import Any, Dict, Mapping, cast, Union, Optional, Tuple, Annotated
 
 import tomli_w
 from pydantic import Field, model_validator, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict, TomlConfigSettingsSource, PydanticBaseSettingsSource
 
 from fund_nav_mcp.models.common import UtilResponse
-from fund_nav_mcp.models.schemas import DatabaseConfig, CacheConfig
+from fund_nav_mcp.models.schemas import (
+    DatabaseConfig, CacheConfig, SQLiteConfig, MySQLConfig, PostgresqlConfig, InfluxDBConfig, RedisConfig)
 from fund_nav_mcp.utils.enums import Errcode
 from fund_nav_mcp.utils.path_utils import get_config_path
 
@@ -29,8 +30,21 @@ class MCPSettings(BaseSettings):
         timezone (str): 时区，默认 Asia/Shanghai
         default_currency (str): 默认货币，默认 CNY
     """
-    databases: Dict[str, DatabaseConfig] = Field(default_factory=dict)
-    caches: Dict[str, CacheConfig] = Field(default_factory=dict)
+    databases: Dict[str, Annotated[
+        Union[
+            Annotated[SQLiteConfig, "sqlite"],
+            Annotated[MySQLConfig, "mysql"],
+            Annotated[PostgresqlConfig, "postgresql"],
+            Annotated[InfluxDBConfig, "influxdb"],
+        ],
+        Field(discriminator="db_type")
+    ]] = Field(default_factory=dict)
+    caches: Dict[str, Annotated[
+        Union[
+            Annotated[RedisConfig, "redis"],
+        ],
+        Field(discriminator="cache_type")
+    ]] = Field(default_factory=dict)
 
     cache_enabled: bool = Field(default=True, title="是否启用缓存", description="是否启用缓存，默认启用")
 
@@ -103,46 +117,47 @@ class MCPSettings(BaseSettings):
             self.caches = {"default": default_cache}
         return self
 
-    @staticmethod
-    def _add_config(storage: dict, name: str, config: Any, config_type: str) -> UtilResponse:
+    def get_storage(self, config: Union[DatabaseConfig, CacheConfig]) -> Tuple[dict, str]:
+        """根据配置类型获取对应的存储字典。"""
+        if isinstance(config, DatabaseConfig):
+            return self.databases, "数据库"
+        elif isinstance(config, CacheConfig):
+            return self.caches, "缓存"
+        else:
+            raise ValueError(f"未知配置类型: {type(config)}")
+
+    def _add_config(self, name: str, config: Union[DatabaseConfig, CacheConfig]) -> UtilResponse:
         """
         添加配置项
 
         Args:
-            storage: 配置字典，如 databases 或 caches
             name: 配置项名称
             config: 配置项值
-            config_type: 配置项类型，如 "数据库" 或 "缓存"
 
         Returns:
             通用响应
         """
+        storage, config_type = self.get_storage(config)
         if name not in storage:
             storage[name] = config
             return UtilResponse(code=Errcode.SUCCESS, message=f"{config_type}配置 {name} 添加成功")
         return UtilResponse(code=Errcode.UNIQUE_CONFLICT, message=f"{config_type}配置 {name} 已存在，无法添加")
 
-    @staticmethod
     def _update_config(
-            storage: dict,
-            name: str,
-            config: Union[DatabaseConfig, CacheConfig],
-            new_name: Optional[str],
-            config_type: str
+            self, name: str, config: Union[DatabaseConfig, CacheConfig], new_name: Optional[str]
     ) -> UtilResponse:
         """
         更新配置项
 
         Args:
-            storage: 配置字典，如 databases 或 caches
             name: 配置项名称
             config: 配置项值
             new_name: 新配置项名称，可选
-            config_type: 配置项类型，如 "数据库" 或 "缓存"
 
         Returns:
             通用响应
         """
+        storage, config_type = self.get_storage(config)
         if name not in storage:
             return UtilResponse(code=Errcode.RECORD_NOT_FOUND, message=f"{config_type}配置 {name} 不存在，无法修改")
 
@@ -157,19 +172,17 @@ class MCPSettings(BaseSettings):
         storage[name] = config
         return UtilResponse(code=Errcode.SUCCESS, message=f"{config_type}配置 {name} 修改成功")
 
-    @staticmethod
-    def _delete_config(storage: Dict[str, Any], name: str, config_type: str) -> UtilResponse:
+    def _delete_config(self, name: str, config: Union[DatabaseConfig, CacheConfig]) -> UtilResponse:
         """
         删除配置项
 
         Args:
-            storage: 配置字典，如 databases 或 caches
             name: 配置项名称
-            config_type: 配置项类型，如 "数据库" 或 "缓存"
 
         Returns:
             通用响应
         """
+        storage, config_type = self.get_storage(config)
         if name in storage:
             del storage[name]
             return UtilResponse(code=Errcode.SUCCESS, message=f"{config_type}配置 {name} 删除成功")
@@ -177,27 +190,27 @@ class MCPSettings(BaseSettings):
 
     def add_database(self, db_name: str, db_config: DatabaseConfig) -> UtilResponse:
         """添加数据库配置"""
-        return self._add_config(self.databases, db_name, db_config, "数据库")
+        return self._add_config(db_name, db_config)
 
     def update_database(self, db_name: str, db_config: DatabaseConfig, new_db_name: str = None) -> UtilResponse:
         """更新数据库配置"""
-        return self._update_config(self.databases, db_name, db_config, new_db_name, "数据库")
+        return self._update_config(db_name, db_config, new_db_name)
 
-    def delete_database(self, db_name: str) -> UtilResponse:
+    def delete_database(self, db_name: str, db_config: DatabaseConfig) -> UtilResponse:
         """删除数据库配置"""
-        return self._delete_config(self.databases, db_name, "数据库")
+        return self._delete_config(db_name, db_config)
 
     def add_cache(self, cache_name: str, cache_config: CacheConfig) -> UtilResponse:
         """添加缓存配置"""
-        return self._add_config(self.caches, cache_name, cache_config, "缓存")
+        return self._add_config(cache_name, cache_config)
 
     def update_cache(self, cache_name: str, cache_config: CacheConfig, new_cache_name: str = None) -> UtilResponse:
         """更新缓存配置"""
-        return self._update_config(self.caches, cache_name, cache_config, new_cache_name, "缓存")
+        return self._update_config(cache_name, cache_config, new_cache_name)
 
-    def delete_cache(self, cache_name: str) -> UtilResponse:
+    def delete_cache(self, cache_name: str, cache_config: CacheConfig) -> UtilResponse:
         """删除缓存配置"""
-        return self._delete_config(self.caches, cache_name, "缓存")
+        return self._delete_config(cache_name, cache_config)
 
     @staticmethod
     def test_connection(config: Union[DatabaseConfig, CacheConfig]) -> UtilResponse:

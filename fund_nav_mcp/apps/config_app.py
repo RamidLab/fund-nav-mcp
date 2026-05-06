@@ -11,6 +11,7 @@ from prefab_ui.components import (
     Button, Row, Dialog, Div, Form, Column, Label, Input, Select, SelectOption, Badge, Loader, If,
     Container, Alert, AlertTitle, AlertDescription, Popover, Text, )
 from prefab_ui.rx import RESULT, Rx, EVENT, ERROR
+from pydantic import SecretStr
 
 from fund_nav_mcp.apps import CallTool
 from fund_nav_mcp.config import get_settings
@@ -72,11 +73,22 @@ def get_render_info() -> Dict[str, Any]:
                 **cfg.model_dump(),
                 name_key: name,
                 "status_component": cfg.status.component,
-                **(({"db_sql_echo_text": "是" if cfg.db_sql_echo == "open" else "否"})
-                   if isinstance(cfg, DatabaseConfig) else {}),
             }
+            if item.get("db_password", None):
+                db_password = item["db_password"]
+                item["db_password"] = db_password.get_secret_value() \
+                    if isinstance(db_password, SecretStr) else db_password
+            if item.get("cache_pass", None):
+                cache_pass = item["cache_pass"]
+                item["cache_pass"] = cache_pass.get_secret_value() \
+                    if isinstance(cache_pass, SecretStr) else cache_pass
+            if item.get("influxdb_token", None):
+                token = item["influxdb_token"]
+                item["influxdb_token"] = token.get_secret_value() \
+                    if isinstance(token, SecretStr) else token
             data.append(item)
             statuses.append(item.get("status"))
+        logger.debug(f"prepare_config_list {name_key}: {data}")
         return data, Counter(statuses)
 
     def _calc_counts(statuses: Counter[NodeStatus], prefix: str) -> Dict[str, Any]:
@@ -123,23 +135,24 @@ def get_render_info() -> Dict[str, Any]:
     name="switch_default_config",
     description="切换默认配置"
 )
-def switch_default_config(_class: str, _type: str) -> Dict[str, Any]:
+def switch_default_config(_class: str, _type: str, config: Dict[str, Any]) -> Dict[str, Any]:
     """
     切换默认配置
 
     Args:
         _class: 配置类型，"db" 或 "cache"
         _type: 配置类型，"sqlite", "mysql", "postgresql", "influxdb" 或 "redis"
+        config: 配置字典
 
     Returns:
         默认配置
     """
-    # 数据库默认配置映射 (host, port)
+    # 数据库默认配置映射 (host, port, db_main, org, bucket)
     db_defaults = {
-        "sqlite": ("memory", 0),
-        "mysql": ("127.0.0.1", 3306),
-        "postgresql": ("127.0.0.1", 5432),
-        "influxdb": ("127.0.0.1", 8086),
+        "sqlite": ("memory", 0, "", "", ""),
+        "mysql": ("127.0.0.1", 3306, "fund_nav_mcp", "", ""),
+        "postgresql": ("127.0.0.1", 5432, "fund_nav_mcp", "", ""),
+        "influxdb": ("127.0.0.1", 8086, "", "fund_nav_mcp", "fund_data"),
     }
     # 缓存默认配置映射 (host, port)
     cache_defaults = {
@@ -147,17 +160,23 @@ def switch_default_config(_class: str, _type: str) -> Dict[str, Any]:
     }
 
     if _class == "db":
-        host, port = db_defaults.get(_type, ("", 0))
+        host, port, def_db, org, bucket = db_defaults.get(_type, ("", 0, "", "", ""))
         return {
+            **config,
             "db_host": host,
             "db_port": port,
             "db_username": "",
             "db_password": "",
+            "db_main": def_db,
+            "influxdb_token": "",
+            "influxdb_org": org,
+            "influxdb_bucket": bucket,
             "status": NodeStatus.Unknown,
         }
     if _class == "cache":
         host, port = cache_defaults.get(_type, ("", 0))
         return {
+            **config,
             "cache_host": host,
             "cache_port": port,
             "cache_pass": "",
@@ -267,12 +286,9 @@ def config_app_ui() -> PrefabApp:
                         SetState("db_action_result", ""),
                         CallTool(
                             "switch_default_config",
-                            arguments={"_class": "db", "_type": Rx("db_add_args.db_type")},
-                            on_success=[
-                                SetState("db_add_args.db_host", RESULT["db_host"]),
-                                SetState("db_add_args.db_port", RESULT["db_port"]),
-                                SetState("db_add_args.status", RESULT["status"]),
-                            ]
+                            arguments={
+                                "_class": "db", "_type": Rx("db_add_args.db_type"), "config": Rx("db_add_args")},
+                            on_success=[SetState("db_add_args", RESULT)]
                         ),
                     ]):
                         SelectOption(value="sqlite", label="SQLite", selected=True)
@@ -298,12 +314,32 @@ def config_app_ui() -> PrefabApp:
                                 placeholder="如：3306",
                                 inputType="number",
                             )
+                        with If(Rx("db_add_args.db_type") != "influxdb"):
+                            with Column(gap=2):
+                                Label("数据库用户名")
+                                Input(name="db_add_args.db_username", placeholder="如：root")
+                            with Column(gap=2):
+                                Label("数据库密码")
+                                Input(name="db_add_args.db_password", placeholder="如：123456", inputType="password")
+                with If(Rx("db_add_args.db_type") != "sqlite"):
+                    with Column(gap=2):
+                        Label("默认数据库")
+                    Input(name="db_add_args.db_main", placeholder="如：fund_nav_mcp")
+                with If(Rx("db_add_args.db_type") == "influxdb"):
+                    with Row(gap=2):
                         with Column(gap=2):
-                            Label("数据库用户名")
-                            Input(name="db_add_args.db_username", placeholder="如：root")
+                            Label("InfluxDB 令牌")
+                            Input(
+                                name="db_add_args.influxdb_token",
+                                placeholder="如：token-123abc...",
+                                inputType="password"
+                            )
                         with Column(gap=2):
-                            Label("数据库密码")
-                            Input(name="db_add_args.db_password", placeholder="如：123456", inputType="password")
+                            Label("InfluxDB 组织")
+                            Input(name="db_add_args.influxdb_org", placeholder="如：fund_nav_mcp")
+                        with Column(gap=2):
+                            Label("InfluxDB 桶")
+                            Input(name="db_add_args.influxdb_bucket", placeholder="如：fund_data")
                 with Column(gap=2):
                     Label("连接池大小")
                     Input(name="db_add_args.db_pool_size", placeholder="如：5", inputType="number")
@@ -378,14 +414,9 @@ def config_app_ui() -> PrefabApp:
                         SetState("db_action_result", ""),
                         CallTool(
                             "switch_default_config",
-                            arguments={"_class": "db", "_type": Rx("db_edit_args.db_type")},
-                            on_success=[
-                                SetState("db_edit_args.db_host", RESULT["db_host"]),
-                                SetState("db_edit_args.db_port", RESULT["db_port"]),
-                                SetState("db_edit_args.db_username", RESULT["db_username"]),
-                                SetState("db_edit_args.db_password", RESULT["db_password"]),
-                                SetState("db_edit_args.status", RESULT["status"]),
-                            ]
+                            arguments={
+                                "_class": "db", "_type": Rx("db_edit_args.db_type"), "config": Rx("db_edit_args")},
+                            on_success=[SetState("db_edit_args", RESULT)]
                         ),
                     ]):
                         SelectOption(value="sqlite", label="SQLite")
@@ -415,19 +446,39 @@ def config_app_ui() -> PrefabApp:
                                 placeholder="如：3306",
                                 inputType="number",
                             )
+                        with If(Rx("db_edit_args.db_type") != "influxdb"):
+                            with Column(gap=2):
+                                Label("数据库用户名")
+                                Input(
+                                    name="db_edit_args.db_username",
+                                    placeholder="如：root"
+                                )
+                            with Column(gap=2):
+                                Label("数据库密码")
+                                Input(
+                                    name="db_edit_args.db_password",
+                                    placeholder="如：123456",
+                                    inputType="password",
+                                )
+                with If(Rx("db_edit_args.db_type") != "sqlite"):
+                    with Column(gap=2):
+                        Label("默认数据库")
+                        Input(name="db_edit_args.default_database", placeholder="如：fund_nav_mcp")
+                with If(Rx("db_edit_args.db_type") == "influxdb"):
+                    with Row(gap=2):
                         with Column(gap=2):
-                            Label("数据库用户名")
+                            Label("InfluxDB 令牌")
                             Input(
-                                name="db_edit_args.db_username",
-                                placeholder="如：root"
+                                name="db_edit_args.influxdb_token",
+                                placeholder="如：token-123abc...",
+                                inputType="password"
                             )
                         with Column(gap=2):
-                            Label("数据库密码")
-                            Input(
-                                name="db_edit_args.db_password",
-                                placeholder="如：123456",
-                                inputType="password",
-                            )
+                            Label("InfluxDB 组织")
+                            Input(name="db_edit_args.influxdb_org", placeholder="如：fund_nav_mcp")
+                        with Column(gap=2):
+                            Label("InfluxDB 桶")
+                            Input(name="db_edit_args.influxdb_bucket", placeholder="如：fund_data")
                 with Column(gap=2):
                     Label("连接池大小")
                     Input(
@@ -540,7 +591,10 @@ def config_app_ui() -> PrefabApp:
                                     SetState("dialog_loading", True),
                                     CallTool(
                                         "delete_database",
-                                        arguments={"db_name": Rx("db_edit_args.db_old_name")},
+                                        arguments={
+                                            "db_name": Rx("db_edit_args.db_old_name"),
+                                            "db_config": Rx("db_edit_args")
+                                        },
                                         on_success=[
                                             SetState("db_action_result", ""),
                                             SetState("db_edit_args", {}),
@@ -588,13 +642,11 @@ def config_app_ui() -> PrefabApp:
                                     SetState("cache_action_result", ""),
                                     CallTool(
                                         "switch_default_config",
-                                        arguments={"_class": "cache", "_type": Rx("cache_add_args.cache_type")},
-                                        on_success=[
-                                            SetState("cache_add_args.cache_host", RESULT["cache_host"]),
-                                            SetState("cache_add_args.cache_port", RESULT["cache_port"]),
-                                            SetState("cache_add_args.cache_pass", RESULT["cache_pass"]),
-                                            SetState("cache_add_args.status", RESULT["status"]),
-                                        ]
+                                        arguments={
+                                            "_class": "cache",
+                                            "_type": Rx("cache_add_args.cache_type"),
+                                            "config": Rx("cache_add_args.cache_name")},
+                                        on_success=[SetState("cache_add_args", RESULT)]
                                     ),
                                 ]):
                         SelectOption(value="redis", label="Redis", selected=True)
@@ -635,7 +687,7 @@ def config_app_ui() -> PrefabApp:
                         Input(name="cache_add_args.databases", placeholder="如：16", inputType="number", required=True)
                     with Column(gap=2):
                         Label("主数据库索引")
-                        Input(name="cache_add_args.main_db", placeholder="如：0", inputType="number", required=True)
+                        Input(name="cache_add_args.cache_main", placeholder="如：0", inputType="number", required=True)
                     with Column(gap=2):
                         Label("连接池大小")
                         Input(name="cache_add_args.cache_pool_size", placeholder="如：5", inputType="number",
@@ -711,13 +763,11 @@ def config_app_ui() -> PrefabApp:
                                     SetState("cache_action_result", ""),
                                     CallTool(
                                         "switch_default_config",
-                                        arguments={"_class": "cache", "_type": Rx("cache_edit_args.cache_type")},
-                                        on_success=[
-                                            SetState("cache_edit_args.cache_host", RESULT["cache_host"]),
-                                            SetState("cache_edit_args.cache_port", RESULT["cache_port"]),
-                                            SetState("cache_edit_args.cache_pass", RESULT["cache_pass"]),
-                                            SetState("cache_edit_args.status", RESULT["status"]),
-                                        ]
+                                        arguments={
+                                            "_class": "cache",
+                                            "_type": Rx("cache_edit_args.cache_type"),
+                                            "config": Rx("cache_edit_args")},
+                                        on_success=[SetState("cache_edit_args", RESULT)]
                                     ),
                                 ]):
                         SelectOption(value="redis", label="Redis", selected=True)
@@ -758,7 +808,7 @@ def config_app_ui() -> PrefabApp:
                         Input(name="cache_edit_args.databases", placeholder="如：16", inputType="number", required=True)
                     with Column(gap=2):
                         Label("主数据库索引")
-                        Input(name="cache_edit_args.main_db", placeholder="如：0", inputType="number", required=True)
+                        Input(name="cache_edit_args.cache_main", placeholder="如：0", inputType="number", required=True)
                     with Column(gap=2):
                         Label("连接池大小")
                         Input(name="cache_edit_args.cache_pool_size", placeholder="如：5", inputType="number",
@@ -864,7 +914,10 @@ def config_app_ui() -> PrefabApp:
                                     SetState("dialog_loading", True),
                                     CallTool(
                                         "delete_cache",
-                                        arguments={"cache_name": Rx("cache_edit_args.cache_old_name")},
+                                        arguments={
+                                            "cache_name": Rx("cache_edit_args.cache_old_name"),
+                                            "cache_config": Rx("cache_edit_args"),
+                                        },
                                         on_success=[
                                             SetState("cache_action_result", ""),
                                             SetState("cache_edit_args", {}),
@@ -918,8 +971,7 @@ def config_app_ui() -> PrefabApp:
                             DataTableColumn(key="db_host", header="数据库地址", align="center"),
                             DataTableColumn(key="db_port", header="数据库端口", align="center"),
                             DataTableColumn(key="db_username", header="数据库用户名", align="center"),
-                            DataTableColumn(key="db_sql_echo_text", header="SQL 打印", align="center"),
-                            DataTableColumn(key="db_pool_size", header="连接池数量", align="center", format="number"),
+                            DataTableColumn(key="db_main", header="默认数据库", align="center"),
                             DataTableColumn(key="status_component", header="数据库状态", align="center"),
                         ],
                         rows=Rx("render_info.db_list"),
@@ -934,8 +986,13 @@ def config_app_ui() -> PrefabApp:
                                 "db_host": EVENT.db_host,
                                 "db_port": EVENT.db_port,
                                 "db_username": EVENT.db_username,
+                                "db_password": EVENT.db_password,
+                                "db_main": EVENT.db_main,
                                 "db_sql_echo": EVENT.db_sql_echo,
                                 "db_pool_size": EVENT.db_pool_size,
+                                "influxdb_token": EVENT.influxdb_token,
+                                "influxdb_org": EVENT.influxdb_org,
+                                "influxdb_bucket": EVENT.influxdb_bucket,
                                 "status": EVENT.status,
                             }),
                             SetState("edit_db_dialog", True),
@@ -976,7 +1033,7 @@ def config_app_ui() -> PrefabApp:
                             DataTableColumn(key="cache_name", header="缓存名称", align="center"),
                             DataTableColumn(key="cache_host", header="缓存地址", align="center"),
                             DataTableColumn(key="cache_port", header="缓存端口", align="center", format="number"),
-                            DataTableColumn(key="main_db", header="主数据库索引", align="center", format="number"),
+                            DataTableColumn(key="cache_main", header="主数据库索引", align="center", format="number"),
                             DataTableColumn(key="databases", header="逻辑数据库数量", align="center", format="number"),
                             DataTableColumn(key="key_prefix", header="键前缀", align="center"),
                             DataTableColumn(key="ttl_seconds", header="缓存过期时间（秒）", align="center",
@@ -998,14 +1055,14 @@ def config_app_ui() -> PrefabApp:
                                 "cache_port": EVENT.cache_port,
                                 "cache_pass": EVENT.cache_pass,
                                 "timeout": EVENT.timeout,
-                                "main_db": EVENT.main_db,
+                                "cache_main": EVENT.cache_main,
                                 "databases": EVENT.databases,
                                 "key_prefix": EVENT.key_prefix,
                                 "ttl_seconds": EVENT.ttl_seconds,
                                 "max_size": EVENT.max_size,
-                                "cache_pool_size": EVENT.cache_pool_size,
                                 "status": EVENT.status,
                                 "cache_type": EVENT.cache_type,
+                                "cache_pool_size": EVENT.cache_pool_size,
                             }),
                             SetState("edit_cache_dialog", True),
                             SetState("db_action_result", "")
@@ -1070,7 +1127,7 @@ def config_app_ui() -> PrefabApp:
                 "cache_port": 6379,
                 "cache_pass": "",
                 "timeout": 5,
-                "main_db": 0,
+                "cache_main": 0,
                 "databases": 16,
                 "key_prefix": "",
                 "ttl_seconds": 300,

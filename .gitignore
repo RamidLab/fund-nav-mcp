@@ -81,5 +81,6 @@ uv.lock
 configs/
 *logs/
 
-docker/compose.override.yml
-docker/*_data/
+docker/compose.*.yml
+docker/*data/
+docker/.env.*
