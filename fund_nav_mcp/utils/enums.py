@@ -1,10 +1,25 @@
-__all__ = ["NodeStatus", "Errcode"]
+__all__ = [
+    "NodeStatus", "FundStatus", "FundNavStatus", "FundType",
+    "FundRegulatoryType", "PeriodType", "FundDataSource",
+    "Errcode"
+]
 
 from enum import Enum
 from typing import Any
 
 from prefab_ui.components import Badge
 from starlette.status import *
+
+
+class _BaseIntEnum(int, Enum):
+    def __new__(cls, value: int, label: str) -> int:
+        obj = int.__new__(cls, value)  # type: ignore[call-overload]
+        obj._value_ = value
+        obj.label = label
+        return obj
+
+    def __str__(self):
+        return f"{self.value}"
 
 
 class _NodeStatusEnum(str, Enum):
@@ -39,12 +54,174 @@ class NodeStatus(_NodeStatusEnum):
     Unknown = "未知", "warning", Badge("未知", variant="warning").model_dump()
 
     @classmethod
-    def _missing_(cls, value):
+    def _missing_(cls, value: str):
         return cls.Unknown
 
     @classmethod
     def from_name(cls, name: str) -> "NodeStatus":
         return getattr(cls, name, cls.Unknown)
+
+
+class FundStatus(_BaseIntEnum):
+    """
+    基金状态枚举
+    枚举成员格式： (value:int, label:str)
+    使用示例：
+       Active = 1, "正常运作"
+    兼容：
+       - .value -> int
+       - .label -> str
+    """
+    Active = 1, "正常运作"
+    NormalLiquidated = 2, "正常清算"
+    EarlyLiquidated = 3, "提前清算"
+    ExtendedLiquidated = 4, "延期清算"
+    AbnormalLiquidated = 5, "非正常清算"
+    AdvisoryTerminated = 6, "投顾协议已终止"
+    ManagerCancelled = 7, "管理人已注销"
+    Void = 8, "已作废"
+    Terminated = 9, "已终止"
+    VoluntaryWithdrawn = 10, "主动申请退会"
+    PrivateToPublic = 11, "私转公"
+    Unknown = 0, "未知"
+
+    @classmethod
+    def _missing_(cls, value: int):
+        return cls.Unknown
+
+    @classmethod
+    def from_name(cls, name: str) -> "FundStatus":
+        return getattr(cls, name, cls.Unknown)
+
+    @classmethod
+    def from_label(cls, label: str) -> "FundStatus":
+        return next((status for status in cls if status.label == label), cls.Unknown)
+
+
+class FundNavStatus(_BaseIntEnum):
+    Valid = 1, "有效"
+    Pending = 2, "待披露"
+    Estimate = 3, "估算"
+    Suspended = 4, "暂停披露"
+    Deprecated = 5, "已废弃"
+    Pre = 6, "预发布"
+    Unknown = 0, "未知"
+
+    @classmethod
+    def _missing_(cls, value: str):
+        return cls.Unknown
+
+    @classmethod
+    def from_name(cls, name: str) -> "FundNavStatus":
+        return getattr(cls, name, cls.Unknown)
+
+    @classmethod
+    def from_label(cls, label: str) -> "FundNavStatus":
+        return next((status for status in cls if status.label == label), cls.Unknown)
+
+
+class FundType(_BaseIntEnum):
+    Stock = 1, "股票型"
+    Mixed = 2, "混合型"
+    Bond = 3, "债券型"
+    Money = 4, "货币型"
+    Fof = 5, "组合型"
+    Qdii = 6, "QDII型"
+    Commodity = 7, "商品型"
+    Alternative = 8, "替代型"
+    Other = 9, "其他"
+
+    @classmethod
+    def _missing_(cls, value: str):
+        return cls.Other
+
+    @classmethod
+    def from_name(cls, name: str) -> "FundType":
+        return getattr(cls, name, cls.Other)
+
+    @classmethod
+    def from_label(cls, label: str) -> "FundType":
+        return next((status for status in cls if status.label == label), cls.Other)
+
+
+class FundRegulatoryType(_BaseIntEnum):
+    Unknown = 0, "未知"
+    # 公募类
+    Public = 1, "公募基金"
+    PublicReit = 2, "公募REITs"
+    # 私募类
+    PrivateSecurities = 3, "私募证券投资基金"
+    PrivateSecuritiesFof = 4, "私募证券类FOF"
+    VentureCapital = 5, "创业投资基金"
+    VentureCapitalFof = 6, "创投类FOF"
+    PrivateEquity = 7, "私募股权投资基金"
+    PrivateEquityFof = 8, "私募股权类FOF"
+    PrivateOther = 9, "其他私募投资基金"
+    PrivateOtherFof = 10, "其他私募FOF"
+    PrivateAssetAllocation = 11, "私募资产配置基金"
+
+    @classmethod
+    def _missing_(cls, value: str):
+        return cls.Unknown
+
+    @classmethod
+    def from_name(cls, name: str) -> "FundRegulatoryType":
+        return getattr(cls, name, cls.Unknown)
+
+    @classmethod
+    def from_label(cls, label: str) -> "FundRegulatoryType":
+        return next((status for status in cls if status.label == label), cls.Unknown)
+
+
+class FundDataSource(_BaseIntEnum):
+    """
+    关于编码：
+       - 0 —— 未知
+       - 1 ~ 99 手动 / 系统导入
+       - 100 ~ 299 券商 / 机构直连
+       - 300 ~ 499 第三方数据平台
+       - 500 ~ 699 开源数据项目
+    """
+    Unknown = 0, "未知"
+
+    Email = 1, "邮箱导入"
+    ManualImport = 2, "文件批量导入"
+    Api = 3, "API 自动同步"
+
+    HuaTai = 100, "华泰证券"
+
+    HuoFuNiu = 300, "火富牛"
+
+    Akshare = 500, "akshare"
+
+    Other = 999, "其他"
+
+    @classmethod
+    def _missing_(cls, value: str):
+        return cls.Other
+
+    @classmethod
+    def from_name(cls, name: str) -> "FundDataSource":
+        return getattr(cls, name, cls.Other)
+
+    @classmethod
+    def from_label(cls, label: str) -> "FundDataSource":
+        return next((status for status in cls if status.label == label), cls.Other)
+
+
+class PeriodType(_BaseIntEnum):
+    Daily = 1, "日"
+    Weekly = 2, "周"
+    Monthly = 3, "月"
+    Quarterly = 4, "季度"
+    HalfYear = 5, "半年"
+    Yearly = 6, "年"
+    TwoYear = 7, "两年"
+    ThreeYear = 8, "三年"
+    FiveYear = 9, "五年"
+    TenYear = 10, "十年"
+    SinceInception = 11, "成立以来"
+    Custom = 99, "自定义"
 
 
 class _ErrcodeEnum(int, Enum):
