@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional, Type, cast, Union, AsyncIterator, 
 from influxdb_client import InfluxDBClient, Point, QueryApi
 from influxdb_client.client.write_api import SYNCHRONOUS, WriteApi
 from pydantic import SecretStr
-from sqlalchemy import text, inspect, Inspector
+from sqlalchemy import text, inspect, Inspector, select, func
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -21,7 +21,7 @@ from sqlalchemy.orm import DeclarativeBase
 from fund_nav_mcp.config import get_settings
 from fund_nav_mcp.db import RdbmsDBManager, TimeseriesDBManager
 from fund_nav_mcp.models.orm.base import Base
-from fund_nav_mcp.models.schemas import InfluxDBConfig
+from fund_nav_mcp.models.schemas import InfluxDBConfig, PaginationParams, PageData
 
 
 class DBManager(RdbmsDBManager):
@@ -190,6 +190,53 @@ class DBManager(RdbmsDBManager):
             result = await session.execute(statement, params or {})
             rows = result.mappings().all()
             return [dict(r) for r in rows]
+
+    async def paginate(
+            self,
+            model: Type[DeclarativeBase],
+            params: PaginationParams,
+            where: Optional[List[Any]] = None,
+            order_by: Optional[List[Any]] = None,
+    ) -> PageData:
+        """
+        通用分页查询，返回 PageData。
+
+        Args:
+            model: SQLAlchemy ORM 模型（如 Fund）
+            params: 分页参数（page, page_size）
+            where: 可选的过滤条件列表（如 Fund.status == 1）
+            order_by: 可选的排序字段列表（如 Fund.establishment_date.desc()）
+
+        Returns:
+            PageData 对象，包含分页数据和总数
+        """
+        if self._session_factory is None:
+            raise RuntimeError("数据库未连接，请先调用 connect()")
+
+        async with self._session_factory() as session:
+            # 基础查询
+            stmt = select(model)
+            if where:
+                stmt = stmt.where(*where)
+            if order_by:
+                stmt = stmt.order_by(*order_by)
+
+            # 分页查询
+            limit, offset = params.limit_offset()
+            result = await session.execute(stmt.limit(limit).offset(offset))
+
+            items = [
+                {col.name: getattr(row, col.name) for col in model.__table__.columns.values()}
+                for row in result.scalars().all()
+            ]
+
+            # 总数查询（复用相同的过滤条件）
+            count_stmt = select(func.count()).select_from(model)
+            if where:
+                count_stmt = count_stmt.where(*where)
+            total = (await session.execute(count_stmt)).scalar() or 0
+
+        return PageData.create(items, params, total)
 
     async def health_check(self, timeout: float = 2.0) -> bool:
         """

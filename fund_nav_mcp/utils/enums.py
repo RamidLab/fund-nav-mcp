@@ -1,6 +1,6 @@
 __all__ = [
     "NodeStatus", "FundStatus", "FundNavStatus", "FundType",
-    "FundRegulatoryType", "PeriodType", "FundDataSource",
+    "FundRegulatoryType", "FundManagementType", "PeriodType", "FundDataSource",
     "Errcode"
 ]
 
@@ -170,6 +170,25 @@ class FundRegulatoryType(_BaseIntEnum):
 
     @classmethod
     def from_label(cls, label: str) -> "FundRegulatoryType":
+        return next((status for status in cls if status.label == label), cls.Unknown)
+
+
+class FundManagementType(_BaseIntEnum):
+    Unknown = 0, "未知"
+    Trust = 1, "受托管理"
+    Advisory = 2, "顾问管理"
+    Self = 3, "自我管理"
+
+    @classmethod
+    def _missing_(cls, value: str):
+        return cls.Unknown
+
+    @classmethod
+    def from_name(cls, name: str) -> "FundManagementType":
+        return getattr(cls, name, cls.Unknown)
+
+    @classmethod
+    def from_label(cls, label: str) -> "FundManagementType":
         return next((status for status in cls if status.label == label), cls.Unknown)
 
 

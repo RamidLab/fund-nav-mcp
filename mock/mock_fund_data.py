@@ -9,7 +9,8 @@ from faker import Faker
 from fund_nav_mcp.db.core import get_manager, DBManager, InfluxDBManager
 from fund_nav_mcp.models.orm import FundManager, FundManagerPerson, FundCategory, Fund, FundNav, FundReturn, \
     FundHolding, FundCategoryMapping
-from fund_nav_mcp.utils.enums import FundType, FundRegulatoryType, FundStatus, FundNavStatus, FundDataSource, PeriodType
+from fund_nav_mcp.utils.enums import FundType, FundRegulatoryType, FundStatus, FundNavStatus, FundDataSource, \
+    PeriodType, FundManagementType
 from fund_nav_mcp.utils.log import get_logger
 
 logger = get_logger(__name__)
@@ -141,9 +142,11 @@ async def generate_fund_data(manager_ids: List[int], person_ids: List[int]) -> L
             "fund_regulatory_type": random.choice(list(FundRegulatoryType.__members__.values())),
             "fund_manager_person_id": random.choice(person_ids) if person_ids else None,
             "fund_manager_id": random.choice(manager_ids),
+            "fund_management_type": random.choice(list(FundManagementType.__members__.values())),
             "fund_custodian": fake.company(),
+            "fund_registration_address": fake.address(),
             "establishment_date": start_date,
-            "fund_scale": Decimal(random.uniform(0.5, 200)).quantize(Decimal("0.01")),
+            "registration_date": start_date,
             "status": random.choice(list(FundStatus.__members__.values())),
         })
     return funds

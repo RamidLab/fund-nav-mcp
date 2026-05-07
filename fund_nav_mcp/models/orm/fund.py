@@ -10,7 +10,8 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 
 from fund_nav_mcp.models.orm.base import Base
-from fund_nav_mcp.utils.enums import FundStatus, FundNavStatus, FundType, FundRegulatoryType, FundDataSource, PeriodType
+from fund_nav_mcp.utils.enums import FundStatus, FundNavStatus, FundType, FundRegulatoryType, FundDataSource, \
+    PeriodType, FundManagementType
 
 if TYPE_CHECKING:
     from fund_nav_mcp.models.orm.category import FundCategory
@@ -24,16 +25,18 @@ class Fund(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     fund_code: Mapped[str] = mapped_column(String(20), unique=True, comment='基金代码')
     fund_name: Mapped[str] = mapped_column(String(200), comment='基金名称')
-    fund_short_name: Mapped[str] = mapped_column(String(100), comment='基金简称')
-    fund_type: Mapped[FundType] = mapped_column(Integer, comment='投资标的类型：股票型/混合型/债券型/货币型等')
+    fund_short_name: Mapped[Optional[str]] = mapped_column(String(100), comment='基金简称')
+    fund_type: Mapped[Optional[FundType]] = mapped_column(Integer, comment='投资标的类型：股票型/混合型/债券型/货币型等')
     fund_regulatory_type: Mapped[FundRegulatoryType] = mapped_column(
         Integer, comment='监管类型，如:public-公募，private-私募，pe-私募股权，vc-创业投资等')
     fund_manager_person_id: Mapped[Optional[int]] = mapped_column(
         Integer, comment='基金管理人（个人）ID，公募专用，私募可选')
-    fund_manager_id: Mapped[int] = mapped_column(Integer, comment='基金管理人（机构）ID')
-    fund_custodian: Mapped[str] = mapped_column(String(100), comment='基金托管人')
+    fund_manager_id: Mapped[Optional[int]] = mapped_column(Integer, comment='基金管理人（机构）ID')
+    fund_management_type: Mapped[FundManagementType] = mapped_column(Integer, comment='基金管理类型')
+    fund_custodian: Mapped[Optional[str]] = mapped_column(String(100), comment='基金托管人')
+    fund_registration_address: Mapped[Optional[str]] = mapped_column(String(100), comment='注册地址')
     establishment_date: Mapped[Date] = mapped_column(Date, comment='成立日期')
-    fund_scale: Mapped[float] = mapped_column(DECIMAL(15, 2), comment='基金规模（亿元）')
+    registration_date: Mapped[Date] = mapped_column(Date, comment='备案日期')
     status: Mapped[FundStatus] = mapped_column(Integer, comment='基金状态')
     created_at: Mapped[DateTime] = mapped_column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
     updated_at: Mapped[DateTime] = mapped_column(DateTime, server_default=text("CURRENT_TIMESTAMP"))

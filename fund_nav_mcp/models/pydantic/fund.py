@@ -17,21 +17,24 @@ from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from fund_nav_mcp.utils.enums import FundNavStatus, FundStatus, FundType, FundRegulatoryType, PeriodType, FundDataSource
+from fund_nav_mcp.utils.enums import FundNavStatus, FundStatus, FundType, FundRegulatoryType, PeriodType, \
+    FundDataSource, FundManagementType
 
 
 class FundBase(BaseModel):
-    fund_code: str = Field(..., max_length=20, description='基金代码')
-    fund_name: str = Field(..., max_length=200, description='基金名称')
-    fund_short_name: str = Field(..., max_length=100, description='基金简称')
-    fund_type: FundType = Field(..., description='投资标的类型')
-    fund_regulatory_type: FundRegulatoryType = Field(..., description='监管类型')
-    fund_manager_person_id: Optional[int] = Field(None, description='基金管理人（个人）ID')
-    fund_manager_id: int = Field(..., description='基金管理人（机构）ID')
-    fund_custodian: str = Field(..., max_length=100, description='基金托管人')
-    establishment_date: date = Field(..., description='成立日期')
-    fund_scale: Decimal = Field(..., max_digits=15, decimal_places=2, description='基金规模（亿元）')
-    status: FundStatus = Field(..., description='基金状态')
+    fund_code: str = Field(..., title="基金代码", max_length=20)
+    fund_name: str = Field(..., title="基金名称", max_length=200)
+    fund_short_name: Optional[str] = Field(default=None, title="基金简称", max_length=100)
+    fund_type: Optional[FundType] = Field(default=None, title="投资标的类型")
+    fund_regulatory_type: FundRegulatoryType = Field(..., title="监管类型")
+    fund_manager_person_id: Optional[int] = Field(default=None, title="基金管理人（个人）ID")
+    fund_manager_id: Optional[int] = Field(default=None, title="基金管理人（机构）ID")
+    fund_management_type: FundManagementType = Field(..., title="基金管理类型")
+    fund_custodian: Optional[str] = Field(default=None, title="基金托管人", max_length=100)
+    fund_registration_address: Optional[str] = Field(default=None, title="注册地址", max_length=100)
+    establishment_date: date = Field(..., title="成立日期")
+    registration_date: date = Field(..., title="备案日期")
+    status: FundStatus = Field(..., title="基金状态")
 
 
 class FundCreate(FundBase):
@@ -39,17 +42,19 @@ class FundCreate(FundBase):
 
 
 class FundUpdate(BaseModel):
-    fund_code: Optional[str] = Field(None, max_length=20, description='基金代码')
-    fund_name: Optional[str] = Field(None, max_length=200, description='基金名称')
-    fund_short_name: Optional[str] = Field(None, max_length=100, description='基金简称')
-    fund_type: Optional[FundType] = Field(None, description='投资标的类型')
-    fund_regulatory_type: Optional[FundRegulatoryType] = Field(None, description='监管类型')
-    fund_manager_person_id: Optional[int] = Field(None, description='基金管理人（个人）ID')
-    fund_manager_id: Optional[int] = Field(None, description='基金管理人（机构）ID')
-    fund_custodian: Optional[str] = Field(None, max_length=100, description='基金托管人')
-    establishment_date: Optional[date] = Field(None, description='成立日期')
-    fund_scale: Optional[Decimal] = Field(None, max_digits=15, decimal_places=2, description='基金规模（亿元）')
-    status: Optional[FundStatus] = Field(None, description='基金状态')
+    fund_code: Optional[str] = Field(default=None, max_length=20, description='基金代码')
+    fund_name: Optional[str] = Field(default=None, max_length=200, description='基金名称')
+    fund_short_name: Optional[str] = Field(default=None, max_length=100, description='基金简称')
+    fund_type: Optional[FundType] = Field(default=None, description='投资标的类型')
+    fund_regulatory_type: Optional[FundRegulatoryType] = Field(default=None, description='监管类型')
+    fund_manager_person_id: Optional[int] = Field(default=None, description='基金管理人（个人）ID')
+    fund_manager_id: Optional[int] = Field(default=None, description='基金管理人（机构）ID')
+    fund_management_type: Optional[FundManagementType] = Field(default=None, description='基金管理类型')
+    fund_custodian: Optional[str] = Field(default=None, max_length=100, description='基金托管人')
+    fund_registration_address: Optional[str] = Field(default=None, max_length=100, description='注册地址')
+    establishment_date: Optional[date] = Field(default=None, description='成立日期')
+    registration_date: Optional[date] = Field(default=None, description='备案日期')
+    status: Optional[FundStatus] = Field(default=None, description='基金状态')
 
 
 class FundResponse(FundBase):

@@ -1,4 +1,19 @@
-## [0.3.1] - 2026-05-7
+## [0.4.0] - 2026-05-08
+
+### Added
+
+- **分页模型与通用查询**：
+    - 新增 [`PaginationParams`](fund_nav_mcp/models/schemas.py)、[`PaginationMetadata`](fund_nav_mcp/models/schemas.py)、[`PageData`](fund_nav_mcp/models/schemas.py) 分页模型，支持请求参数校验、响应元数据自动计算及便捷构造方法。
+    - [`DBManager`](fund_nav_mcp/db/core.py) 新增 `paginate` 通用分页查询方法，与分页模型、过滤条件及排序无缝集成，支持 PostgreSQL、MySQL 及 SQLite 多种数据库。
+- **基金过滤器**：
+    - 新增 [`FundFilter`](fund_nav_mcp/models/pydantic/filter.py) 过滤器，支持按基金代码、名称、类型、状态、管理人等条件筛选，包含日期区间及自定义排序。
+
+### Changed
+
+- **基金模型优化**：
+    - 精简 [`Fund`](fund_nav_mcp/models/orm/fund.py) 模型字段，移除冗余、未使用的属性，保持模型简洁清晰。
+
+## [0.3.1] - 2026-05-07
 
 ### Changed
 
@@ -10,7 +25,7 @@
     - 重构 [`_delete_config`](fund_nav_mcp/config.py) 方法，参数从 `(name, config)` 改为 `(_class, name)`，直接通过 `_class` 文本区分 `"db"` 或 `"cache"`，不再依赖传入完整配置对象推断类型。
     - 相应地，[`delete_database`](fund_nav_mcp/config.py) 和 [`delete_cache`](fund_nav_mcp/config.py) 公共方法移除多余的 `db_config` / `cache_config` 参数，仅保留名称参数，简化了 MCP 工具调用时的传参要求。
 
-## [0.3.0] - 2026-05-7
+## [0.3.0] - 2026-05-07
 
 ### Added
 

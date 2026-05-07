@@ -1,13 +1,13 @@
 __all__ = [
     "DatabaseConfig", "CacheConfig",
     "SQLiteConfig", "MySQLConfig", "PostgresqlConfig", "InfluxDBConfig", "RedisConfig",
-    "LoggingConfig"
+    "LoggingConfig", "PaginationMetadata", "PageData", "PaginationParams"
 ]
 
 from functools import lru_cache
-from typing import Optional, Literal, Tuple, TypeVar, Annotated, Union
+from typing import Optional, Literal, Tuple, TypeVar, Generic, List, Annotated, Union
 
-from pydantic import BaseModel, Field, SecretStr, TypeAdapter
+from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator, TypeAdapter
 
 from fund_nav_mcp.models import StorageConfigBase
 from fund_nav_mcp.utils.enums import NodeStatus
@@ -483,3 +483,94 @@ class LoggingConfig(BaseModel):
     json_format: bool = True
     separate_error_file: bool = False
     error_file_base_name: Optional[str] = None
+
+
+class PaginationParams(BaseModel):
+    """
+    分页请求参数（客户端传入）
+
+    Args:
+        page: 当前页码，从1开始，默认 1
+        page_size: 每页记录数，最大200，默认 20
+
+    """
+    page: int = Field(default=1, ge=1, title="当前页码", description="当前页码，从1开始")
+    page_size: int = Field(default=20, ge=1, le=200, title="每页记录数", description="每页记录数，最大200")
+
+    @field_validator("page_size")
+    @classmethod
+    def validate_page_size(cls, v: int) -> int:
+        if v > 200:
+            raise ValueError("每页记录数 page_size 不能超过 200")
+        return v
+
+    @property
+    def offset(self) -> int:
+        """计算数据库偏移量（跳过记录数）"""
+        return (self.page - 1) * self.page_size
+
+    def limit_offset(self) -> tuple[int, int]:
+        """返回 (limit, offset) 元组，便于数据库查询"""
+        return self.page_size, self.offset
+
+
+class PaginationMetadata(BaseModel):
+    """
+    分页元数据（响应中的分页信息）
+
+    Args:
+        page: 当前页码
+        page_size: 每页记录数
+        total: 总记录数
+        total_pages: 总页数
+        has_next: 是否有下一页
+        has_prev: 是否有上一页
+    """
+    page: int = Field(..., title="当前页码", description="当前页码")
+    page_size: int = Field(..., title="每页记录数", description="每页记录数")
+    total: int = Field(..., ge=0, title="总记录数", description="总记录数")
+    total_pages: int = Field(..., ge=0, title="总页数", description="总页数")
+    has_next: bool = Field(..., title="是否有下一页", description="是否有下一页")
+    has_prev: bool = Field(..., title="是否有上一页", description="是否有上一页")
+
+    @model_validator(mode="after")
+    def compute_pages(self) -> "PaginationMetadata":
+        """根据 total 和 page_size 自动计算总页数和前后页标志"""
+        if self.total_pages == 0 and self.total > 0 and self.page_size > 0:
+            # 如果没有手动设置 total_pages，自动计算
+            object.__setattr__(self, "total_pages", (self.total + self.page_size - 1) // self.page_size)
+        object.__setattr__(self, "has_next", self.page < self.total_pages)
+        object.__setattr__(self, "has_prev", self.page > 1)
+        return self
+
+    @classmethod
+    def from_params(cls, params: PaginationParams, total: int) -> "PaginationMetadata":
+        """从请求参数和总记录数构造分页元数据"""
+        page_size = params.page_size
+        total_pages = (total + page_size - 1) // page_size if page_size > 0 else 0
+        return cls(
+            page=params.page,
+            page_size=page_size,
+            total=total,
+            total_pages=total_pages,
+            has_next=params.page < total_pages,
+            has_prev=params.page > 1,
+        )
+
+
+class PageData(BaseModel, Generic[T]):
+    """
+    分页响应数据（通用）
+
+    Args:
+        items: 当前页的数据列表
+        pagination: 分页信息
+    """
+    items: List[T] = Field(..., title="当前页的数据列表", description="当前页的数据列表")
+    pagination: PaginationMetadata = Field(..., title="分页信息", description="分页信息")
+
+    @classmethod
+    def create(cls, items: List[T], params: PaginationParams, total: int) -> "PageData[T]":
+        """便捷构造方法"""
+        pagination = PaginationMetadata.from_params(params, total)
+        return cls(items=items, pagination=pagination)
