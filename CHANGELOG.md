@@ -23,6 +23,9 @@
 
 ### Fixed
 
+- **修复 InfluxDB 写入与数据库管理器获取中的问题**：
+    - 在 [`InfluxDBManager.write`](fund_nav_mcp/db/core.py) 中增加空列表判断，避免向 InfluxDB 写入空点集导致的潜在异常；同时移除不必要的 `write_precision` 参数，简化写入逻辑。
+    - 修复 `get_manager` 中缺失的 `else` 分支，防止 InfluxDB 管理器配置被后续通用 DBManager 配置错误覆盖，确保按数据库类型正确实例化。
 - **修复异步程序无法正常退出**：
     - 修复异步程序退出时进程卡死的问题（由日志监听进程未退出及第三方库 DEBUG 日志清理阻塞引起）
     - 优化 [`LoggingManager._shutdown`](fund_nav_mcp/utils/log.py)，监听进程超时后强制终止，确保主进程优雅退出

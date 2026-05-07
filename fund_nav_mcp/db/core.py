@@ -6,7 +6,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Optional, Type, cast, Union, AsyncIterator, Literal
 
-from influxdb_client import InfluxDBClient, Point, WritePrecision, QueryApi
+from influxdb_client import InfluxDBClient, Point, QueryApi
 from influxdb_client.client.write_api import SYNCHRONOUS, WriteApi
 from pydantic import SecretStr
 from sqlalchemy import text, inspect, Inspector
@@ -323,10 +323,12 @@ class InfluxDBManager(TimeseriesDBManager):
                     bucket=self._bucket,
                     record=data,
                     org=self._org,
-                    write_precision=cast(WritePrecision, cast(object, WritePrecision.NS))
                 )
 
             await asyncio.to_thread(_write_raw)
+            return
+
+        if not points:
             return
 
         def _write_points():
@@ -334,7 +336,6 @@ class InfluxDBManager(TimeseriesDBManager):
                 bucket=self._bucket,
                 record=points,
                 org=self._org,
-                write_precision=cast(WritePrecision, cast(object, WritePrecision.NS))
             )
 
         await asyncio.to_thread(_write_points)
@@ -438,15 +439,15 @@ def get_manager(_class: Literal["db", "cache"], db_name: str) -> Dict[str, Any]:
             ),
             "db_type": db_config.db_type,
         }
-
-    manager_cache[db_name] = {
-        "mgr": DBManager(
-            url=db_config.url,
-            echo=db_config.db_sql_echo == "open",
-            pool_size=db_config.db_pool_size,
-            max_overflow=10,
-        ),
-        "db_type": db_config.db_type,
-    }
+    else:
+        manager_cache[db_name] = {
+            "mgr": DBManager(
+                url=db_config.url,
+                echo=db_config.db_sql_echo == "open",
+                pool_size=db_config.db_pool_size,
+                max_overflow=10,
+            ),
+            "db_type": db_config.db_type,
+        }
 
     return manager_cache[db_name]
