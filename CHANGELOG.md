@@ -2,6 +2,9 @@
 
 ### Added
 
+- **日志配置优化**：
+    - 支持使用 [`log_libraries.json`](configs/log_libraries.json) 配置文件统一静默第三方库日志（如 asyncio、faker）
+    - 新增应用方法 [`_apply_library_log_levels`](fund_nav_mcp/utils/log.py)，用于在应用中统一日志记录。
 - **数据库层完整实现**：
     - 基于 SQLAlchemy 的异步 ORM 模型（基金、净值、持仓、基金经理等表，见 [`models/orm/fund.py`](fund_nav_mcp/models/orm/fund.py)、[`models/orm/manager.py`](fund_nav_mcp/models/orm/manager.py)、[`models/orm/category.py`](fund_nav_mcp/models/orm/category.py)）。
     - Pydantic API 模型，用于请求/响应校验（见 [`models/pydantic/fund.py`](fund_nav_mcp/models/pydantic/fund.py)）。

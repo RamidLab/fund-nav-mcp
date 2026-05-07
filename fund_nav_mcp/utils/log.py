@@ -794,6 +794,46 @@ class LoggingManager:
 _manager = LoggingManager()
 
 
+def _apply_library_log_levels():
+    """从 JSON 文件读取第三方库的日志级别并应用"""
+    config_file = CONST.project_root / "configs" / "log_libraries.json"
+
+    if not config_file.exists():
+        return
+
+    # noinspection PyBroadException
+    try:
+        with open(config_file, "r", encoding="utf-8") as f:
+            lib_config = json.load(f)
+    except Exception:
+        logging.warning(
+            "无法解析日志库配置文件 %s，已跳过对第三方日志级别的静默设置",
+            config_file
+        )
+        return
+
+    for lib_name, level_str in lib_config.items():
+        if not isinstance(level_str, str):
+            logging.warning(
+                "log_libraries.json 中库 '%s' 的级别值不是字符串，已跳过",
+                lib_name
+            )
+            continue
+
+        level = LogLevel.from_name(level_str, default=LogLevel.UNKNOWN)
+        if level is LogLevel.UNKNOWN:
+            logging.warning(
+                "log_libraries.json 中库 '%s' 使用了无效的日志级别 '%s'，已跳过",
+                lib_name, level_str
+            )
+            continue
+
+        logger = logging.getLogger(lib_name)
+        logger.setLevel(level)
+        logger.handlers.clear()
+        logger.propagate = True
+
+
 def log_basic_config(
         level: LogLevel = LogLevel.INFO,
         console: bool = True,
@@ -833,6 +873,7 @@ def log_basic_config(
         separate_error_file=separate_error_file,
         error_file_base_name=error_file_base_name,
     )
+    _apply_library_log_levels()
 
 
 def get_logger(name: Optional[str] = None) -> ContextAdapter:

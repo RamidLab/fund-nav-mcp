@@ -78,7 +78,7 @@ Thumbs.db
 uv.lock
 
 .cache/
-configs/
+configs/config.*.toml
 *logs/
 
 docker/compose.*.yml
