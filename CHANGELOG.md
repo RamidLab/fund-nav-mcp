@@ -2,6 +2,9 @@
 
 ### Changed
 
+- **数据库/缓存管理器获取异步化**：
+    - 将 [`get_manager`](fund_nav_mcp/db/core.py) 由同步函数改为 `async def`，在创建 `InfluxDBManager` 或 `DBManager` 实例后立即执行 `await manager.connect()`，确保调用方获取到的管理器已完成连接初始化，避免后续手动调用 `connect` 的遗漏风险。
+    - 该改动为破坏性变更，所有 `get_manager` 调用处改为 `await get_manager(...)` 以适应异步上下文。
 - **配置删除接口优化**：
     - 重命名 `get_config_path` 为 `get_toml_config`，更清晰地表达获取 TOML 配置路径的用途。
     - 重构 [`_delete_config`](fund_nav_mcp/config.py) 方法，参数从 `(name, config)` 改为 `(_class, name)`，直接通过 `_class` 文本区分 `"db"` 或 `"cache"`，不再依赖传入完整配置对象推断类型。

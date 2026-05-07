@@ -472,18 +472,14 @@ async def insert_data(mgr: DBManager | InfluxDBManager, table_name: str, data: L
 async def main():
     """主函数，负责生成并插入基金数据到数据库"""
     for item in ["default", "pg-default", "mysql-default", "influxdb-default"]:
-        # 获取数据库管理器（同步）
-        manager_info = get_manager("db", item)
+        # 获取数据库管理器（异步）
+        manager_info = await get_manager("db", item)
         mgr = manager_info["mgr"]
         db_type = manager_info["db_type"]
 
-        logger.info(f"开始处理数据库 {item}")
+        logger.info(f"开始处理数据库 {item}, 类型: {db_type}")
 
         try:
-            # 异步连接
-            await mgr.connect()
-            logger.info(f"数据库连接成功, 类型: {db_type}")
-
             if db_type != "influxdb":
                 await mgr.drop_all()
                 await mgr.create_all()

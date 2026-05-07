@@ -402,7 +402,7 @@ class InfluxDBManager(TimeseriesDBManager):
 _manager_cache: Dict[str, Dict[str, Dict[str, Any]]] = {}
 
 
-def get_manager(_class: Literal["db", "cache"], db_name: str) -> Dict[str, Any]:
+async def get_manager(_class: Literal["db", "cache"], db_name: str) -> Dict[str, Any]:
     """
     获取数据库或缓存连接器
 
@@ -430,23 +430,27 @@ def get_manager(_class: Literal["db", "cache"], db_name: str) -> Dict[str, Any]:
         if not token or not org or not bucket:
             raise ValueError("InfluxDB 必须提供 influxdb_token, influxdb_org 和 db_main (bucket)")
 
+        influxdb_manager = InfluxDBManager(
+            url=db_config.url,
+            token=token,
+            org=org,
+            bucket=bucket,
+        )
+        await influxdb_manager.connect()
         manager_cache[db_name] = {
-            "mgr": InfluxDBManager(
-                url=db_config.url,
-                token=token,
-                org=org,
-                bucket=bucket,
-            ),
+            "mgr": influxdb_manager,
             "db_type": db_config.db_type,
         }
     else:
+        db_manager = DBManager(
+            url=db_config.url,
+            echo=db_config.db_sql_echo == "open",
+            pool_size=db_config.db_pool_size,
+            max_overflow=10,
+        )
+        await db_manager.connect()
         manager_cache[db_name] = {
-            "mgr": DBManager(
-                url=db_config.url,
-                echo=db_config.db_sql_echo == "open",
-                pool_size=db_config.db_pool_size,
-                max_overflow=10,
-            ),
+            "mgr": db_manager,
             "db_type": db_config.db_type,
         }
 
