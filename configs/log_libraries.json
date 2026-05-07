@@ -1,3 +1,5 @@
 {
-  "faker": "WARNING"
+  "faker": "WARNING",
+  "asyncio": "WARNING",
+  "aiosqlite": "WARNING"
 }

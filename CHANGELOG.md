@@ -1,3 +1,17 @@
+## [0.3.0] - 2026-05-7
+
+### Added
+
+- **Mock 数据生成器**：
+    - 新增 [`mock_fund_data.py`](mock/mock_fund_data.py)，支持全量异步生成与批量插入8张核心业务表（基金管理人、经理、分类、基金、净值、收益率、持仓、映射）。
+    - 同时支持 PostgreSQL、MySQL、InfluxDB 三种数据库，自动处理外键依赖和数据类型转换。
+
+### Changed
+
+- **数据库配置模型优化**：
+    - [`SQLiteConfig`](fund_nav_mcp/models/schemas.py) 文件路径统一收敛至 `.cache/sqlite/` 子目录，避免项目根目录散落 db 文件。
+    - [`MySQLConfig`](fund_nav_mcp/models/schemas.py)、[`PostgresqlConfig`](fund_nav_mcp/models/schemas.py)、[`InfluxDBConfig`](fund_nav_mcp/models/schemas.py) 的 `db_main` 字段改为必填并提供默认值 `"fund_nav_mcp"`，防止遗漏数据库名导致运行时错误。
+
 ## [0.2.0] - 2026-05-06
 
 ### Added
@@ -38,7 +52,7 @@
     - 将 mysql 和 influxdb 服务定义以注释形式加入，方便按需启用 [`compose.yml`](docker/compose.yml)。
     - 更新环境变量文件及相关字段，适配多数据库后端配置。
 
-## Changed
+### Changed
 
 - **多态配置模型**：
     - 新增 [`StorageConfigBase`](fund_nav_mcp/models/__init__.py) 抽象基类，定义 `url`、`_do_test`、`_classify_error` 等核心接口。

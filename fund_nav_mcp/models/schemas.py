@@ -5,7 +5,6 @@ __all__ = [
 ]
 
 from functools import lru_cache
-from pathlib import Path
 from typing import Optional, Literal, Tuple, TypeVar, Annotated, Union
 
 from pydantic import BaseModel, Field, SecretStr, TypeAdapter
@@ -88,7 +87,8 @@ class SQLiteConfig(DatabaseConfig):
         default="memory",
         title="数据库主机",
         min_length=1,
-        description="默认 memory，Sqlite 数据库可选文件路径（路径相对于项目根目录，支持绝对路径）"
+        description="默认 memory，Sqlite 数据库可选文件路径（存放项目根目录下的 .cache/sqlite/ 文件夹，"
+                    "如：test.db或fund_test/test.db，实际路径为：.cache/sqlite/test.db或.cache/sqlite/fund_test/test.db）"
     )
 
     def _build_url(self, async_driver: bool = True) -> str:
@@ -96,9 +96,7 @@ class SQLiteConfig(DatabaseConfig):
         prefix = "sqlite+aiosqlite" if async_driver else "sqlite"
         if self.db_host == "memory":
             return f"{prefix}:///:memory:"
-        path = Path(self.db_host or "")
-        if not path.is_absolute():
-            path = PROJECT_ROOT / path
+        path = PROJECT_ROOT.joinpath(".cache/sqlite", self.db_host or "")
         path.parent.mkdir(parents=True, exist_ok=True)
         return f"{prefix}:///{path.as_posix()}"
 
@@ -116,7 +114,6 @@ class SQLiteConfig(DatabaseConfig):
             conn.execute(sa_text("SELECT 1"))
         engine.dispose()
 
-    # TODO:后面其他几个都同步sqlite现在的更新
     def _classify_error(self, exc: Exception) -> Tuple[NodeStatus, str]:
         return NodeStatus.Error, f"SQLite 错误: {getattr(exc, 'orig', exc)}"
 
@@ -128,15 +125,13 @@ class MySQLConfig(DatabaseConfig):
     db_port: int = Field(default=3306, title="数据库端口号")
     db_username: str = Field(default="root", title="数据库用户名")
     db_password: SecretStr = Field(default="root", title="数据库密码")
-    db_main: Optional[str] = Field(default=None, title="数据库主键")
+    db_main: str = Field(default="fund_nav_mcp", title="数据库主键")
 
     def _build_url(self, async_driver: bool = True) -> str:
         driver = "asyncmy" if async_driver else "pymysql"
         user = self.db_username
         pwd = self.db_password.get_secret_value()
-        base = f"mysql+{driver}://{user}:{pwd}@{self.db_host}:{self.db_port}"
-        if self.db_main:
-            base += f"/{self.db_main}"
+        base = f"mysql+{driver}://{user}:{pwd}@{self.db_host}:{self.db_port}/{self.db_main}"
         return base
 
     @property
@@ -183,15 +178,13 @@ class PostgresqlConfig(DatabaseConfig):
     db_port: int = Field(default=5432, title="数据库端口号")
     db_username: str = Field(default="postgres", title="数据库用户名")
     db_password: SecretStr = Field(default="postgres", title="数据库密码")
-    db_main: Optional[str] = Field(default=None, title="数据库主键")
+    db_main: str = Field(default="fund_nav_mcp", title="数据库主键")
 
     def _build_url(self, async_driver: bool = True) -> str:
         driver = "asyncpg" if async_driver else "psycopg2"
         user = self.db_username
         pwd = self.db_password.get_secret_value()
-        base = f"postgresql+{driver}://{user}:{pwd}@{self.db_host}:{self.db_port}"
-        if self.db_main:
-            base += f"/{self.db_main}"
+        base = f"postgresql+{driver}://{user}:{pwd}@{self.db_host}:{self.db_port}/{self.db_main}"
         return base
 
     @property
@@ -245,7 +238,7 @@ class InfluxDBConfig(DatabaseConfig):
     db_host: str = Field(default="localhost", title="数据库主机")
     db_port: int = Field(default=8086, title="数据库端口")
     db_ssl_enabled: bool = Field(default=False, title="是否启用 HTTPS")
-    db_main: Optional[str] = Field(..., title="默认桶")
+    db_main: str = Field(default="fund_nav_mcp", title="默认桶")
     influxdb_org: str = Field(..., title="组织")
     influxdb_token: SecretStr = Field(..., alias="influxdb_token", title="Token")
 
