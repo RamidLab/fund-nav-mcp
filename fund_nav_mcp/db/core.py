@@ -3,7 +3,8 @@ from __future__ import annotations
 __all__ = ["DBManager", "InfluxDBManager", "get_manager"]
 
 import asyncio
-from typing import Any, AsyncGenerator, Dict, List, Optional, Type, cast, Union
+from contextlib import asynccontextmanager
+from typing import Any, Dict, List, Optional, Type, cast, Union, AsyncIterator, Literal
 
 from influxdb_client import InfluxDBClient, Point, WritePrecision, QueryApi
 from influxdb_client.client.write_api import SYNCHRONOUS, WriteApi
@@ -64,6 +65,7 @@ class DBManager(RdbmsDBManager):
             await self._engine.dispose()
             self._engine = None
             self._session_factory = None
+            await asyncio.sleep(0.2)
 
     async def create_all(self) -> None:
         """创建所有 ORM 表"""
@@ -102,7 +104,8 @@ class DBManager(RdbmsDBManager):
                 )
             )
 
-    async def get_session(self) -> AsyncGenerator[AsyncSession, None]:
+    @asynccontextmanager
+    async def get_session(self) -> AsyncIterator[AsyncSession]:
         """
         获取一个 AsyncSession 生成器，用于上下文管理
 
@@ -395,16 +398,25 @@ class InfluxDBManager(TimeseriesDBManager):
         return point
 
 
-def get_manager(db_name: str) -> Union[RdbmsDBManager, TimeseriesDBManager]:
+_manager_cache: Dict[str, Dict[str, Dict[str, Any]]] = {}
+
+
+def get_manager(_class: Literal["db", "cache"], db_name: str) -> Dict[str, Any]:
     """
-    获取数据库连接器
+    获取数据库或缓存连接器
 
     Args:
+        _class: 类型，"db" 或 "cache"
         db_name: 数据库名称
 
     Returns:
-        数据库连接器实例
+        数据库连接器实例，包含 mgr 和 db_type 键
     """
+    manager_cache = _manager_cache.setdefault(_class, {})
+
+    if db_name in manager_cache:
+        return manager_cache[db_name]
+
     settings = get_settings()
     db_config = settings.databases.get(db_name)
     if db_config is None:
@@ -416,16 +428,25 @@ def get_manager(db_name: str) -> Union[RdbmsDBManager, TimeseriesDBManager]:
         bucket = db_config.db_main
         if not token or not org or not bucket:
             raise ValueError("InfluxDB 必须提供 influxdb_token, influxdb_org 和 db_main (bucket)")
-        return InfluxDBManager(
-            url=db_config.url,
-            token=token,
-            org=org,
-            bucket=bucket,
-        )
-    else:
-        return DBManager(
+
+        manager_cache[db_name] = {
+            "mgr": InfluxDBManager(
+                url=db_config.url,
+                token=token,
+                org=org,
+                bucket=bucket,
+            ),
+            "db_type": db_config.db_type,
+        }
+
+    manager_cache[db_name] = {
+        "mgr": DBManager(
             url=db_config.url,
             echo=db_config.db_sql_echo == "open",
             pool_size=db_config.db_pool_size,
             max_overflow=10,
-        )
+        ),
+        "db_type": db_config.db_type,
+    }
+
+    return manager_cache[db_name]

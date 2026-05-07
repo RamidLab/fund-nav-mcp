@@ -12,6 +12,15 @@
     - [`InfluxDBManager`](fund_nav_mcp/db/core.py)：时序数据库支持（同步 API + 线程池，规避官方异步 bug）。
     - 完整测试覆盖，包含关系型数据库与时序数据库的 CRUD 及并发场景，测试文件 [`tests/test_rdbms_db.py`](tests/test_rdbms_db.py)、[`tests/test_timeseries_db.py`](tests/test_timeseries_db.py)。
 
+### Changed
+
+- **数据库管理器缓存与接口重构**：
+    - [`get_manager`](fund_nav_mcp/db/core.py) 增加 `_class` 参数（`"db"` / `"cache"`），引入按类别隔离的多级缓存，实现同一数据库实例在全局范围内的单例模式，避免连接池重复创建。
+    - 使用 `dict.setdefault` 自动构建二级缓存结构，无需显式初始化，简化缓存管理逻辑。
+    - 返回类型从直接实例更改为 `Dict[str, Any]`（包含 `mgr` 和 `db_type` 键），统一不同数据库管理器的获取接口。
+- **会话获取方式改进**：
+    - [`DBManager.get_session`](fund_nav_mcp/db/core.py) 改用 `@asynccontextmanager` 装饰器，返回 `AsyncIterator[AsyncSession]`，修正静态类型检查中的 `AbstractAsyncContextManager` 兼容问题，同时保持原有 `async with` 用法不变。
+
 ### Fixed
 
 - **修复异步程序无法正常退出**：
