@@ -625,7 +625,6 @@ def config_app_ui() -> PrefabApp:
                                         "delete_database",
                                         arguments={
                                             "db_name": Rx("db_edit_args.db_old_name"),
-                                            "db_config": Rx("db_edit_args")
                                         },
                                         on_success=[
                                             SetState("db_action_result", ""),
@@ -948,7 +947,6 @@ def config_app_ui() -> PrefabApp:
                                         "delete_cache",
                                         arguments={
                                             "cache_name": Rx("cache_edit_args.cache_old_name"),
-                                            "cache_config": Rx("cache_edit_args"),
                                         },
                                         on_success=[
                                             SetState("cache_action_result", ""),

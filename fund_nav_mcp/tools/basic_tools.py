@@ -25,7 +25,7 @@ from fund_nav_mcp.utils.enums import NodeStatus, Errcode
     description="检查MCP服务器健康状态，返回服务是否正常",
     tags={"sys_tool"}
 )
-def health() -> UtilResponse:
+async def health() -> UtilResponse:
     # TODO: 检查系统服务是否正常
     return UtilResponse(code=Errcode.SUCCESS, message="服务正常")
 
@@ -64,7 +64,7 @@ async def get_tools_by_tag(tag: str, ctx: Context) -> UtilResponse:
     description="获取所有配置",
     tags={"config_tool"}
 )
-def get_all_config(reload: bool = False) -> MCPSettings:
+async def get_all_config(reload: bool = False) -> MCPSettings:
     """
     获取所有配置
 
@@ -81,7 +81,7 @@ def get_all_config(reload: bool = False) -> MCPSettings:
     description="添加数据库配置",
     tags={"config_tool"}
 )
-def add_database(db_name: str, db_config: Dict[str, Any]) -> UtilResponse:
+async def add_database(db_name: str, db_config: Dict[str, Any]) -> UtilResponse:
     """
     添加数据库配置
 
@@ -93,9 +93,9 @@ def add_database(db_name: str, db_config: Dict[str, Any]) -> UtilResponse:
         通用响应
     """
     settings = get_settings()
-    result = settings.add_database(db_name, DatabaseConfig.model_validate(db_config))
+    result = check_result(settings.add_database(db_name, DatabaseConfig.model_validate(db_config)))
     settings.store()
-    return check_result(result)
+    return result
 
 
 @global_tool
@@ -105,7 +105,7 @@ def add_database(db_name: str, db_config: Dict[str, Any]) -> UtilResponse:
     description="添加缓存配置",
     tags={"config_tool"}
 )
-def add_cache(cache_name: str, cache_config: Dict[str, Any]) -> UtilResponse:
+async def add_cache(cache_name: str, cache_config: Dict[str, Any]) -> UtilResponse:
     """
     添加缓存配置
 
@@ -117,9 +117,9 @@ def add_cache(cache_name: str, cache_config: Dict[str, Any]) -> UtilResponse:
         通用响应
     """
     settings = get_settings()
-    result = settings.add_cache(cache_name, CacheConfig.model_validate(cache_config))
+    result = check_result(settings.add_cache(cache_name, CacheConfig.model_validate(cache_config)))
     settings.store()
-    return check_result(result)
+    return result
 
 
 @global_tool
@@ -129,7 +129,7 @@ def add_cache(cache_name: str, cache_config: Dict[str, Any]) -> UtilResponse:
     description="更新数据库配置",
     tags={"config_tool"}
 )
-def update_database(db_name: str, db_config: Dict[str, Any]) -> UtilResponse:
+async def update_database(db_name: str, db_config: Dict[str, Any]) -> UtilResponse:
     """
     更新数据库配置
 
@@ -143,12 +143,13 @@ def update_database(db_name: str, db_config: Dict[str, Any]) -> UtilResponse:
     settings = get_settings()
     db_config["status"] = db_config.get("status", NodeStatus.Unknown)
     new_db_name = db_config["db_name"]
-    result = settings.update_database(
-        db_name, DatabaseConfig.model_validate(db_config),
+    result = check_result(settings.update_database(
+        db_name=db_name,
+        db_config=DatabaseConfig.model_validate(db_config),
         new_db_name=new_db_name if db_name != new_db_name else None
-    )
+    ))
     settings.store()
-    return check_result(result)
+    return result
 
 
 @global_tool
@@ -158,7 +159,7 @@ def update_database(db_name: str, db_config: Dict[str, Any]) -> UtilResponse:
     description="更新缓存配置",
     tags={"config_tool"}
 )
-def update_cache(cache_name: str, cache_config: Dict[str, Any]) -> UtilResponse:
+async def update_cache(cache_name: str, cache_config: Dict[str, Any]) -> UtilResponse:
     """
     更新缓存配置
 
@@ -172,12 +173,13 @@ def update_cache(cache_name: str, cache_config: Dict[str, Any]) -> UtilResponse:
     settings = get_settings()
     cache_config["status"] = cache_config.get("status", NodeStatus.Unknown)
     new_cache_name = cache_config["cache_name"]
-    result = settings.update_cache(
-        cache_name, CacheConfig.model_validate(cache_config),
+    result = check_result(settings.update_cache(
+        cache_name=cache_name,
+        cache_config=CacheConfig.model_validate(cache_config),
         new_cache_name=new_cache_name if cache_name != new_cache_name else None
-    )
+    ))
     settings.store()
-    return check_result(result)
+    return result
 
 
 @global_tool
@@ -187,21 +189,20 @@ def update_cache(cache_name: str, cache_config: Dict[str, Any]) -> UtilResponse:
     description="删除数据库配置",
     tags={"config_tool"}
 )
-def delete_database(db_name: str, db_config: Dict[str, Any]) -> UtilResponse:
+async def delete_database(db_name: str) -> UtilResponse:
     """
     删除数据库配置
 
     Args:
         db_name: 数据库名称
-        db_config: 数据库配置字典
 
     Returns:
         通用响应
     """
     settings = get_settings()
-    result = settings.delete_database(db_name, DatabaseConfig.model_validate(db_config))
+    result = check_result(settings.delete_database(db_name))
     settings.store()
-    return check_result(result)
+    return result
 
 
 @global_tool
@@ -211,18 +212,17 @@ def delete_database(db_name: str, db_config: Dict[str, Any]) -> UtilResponse:
     description="删除缓存配置",
     tags={"config_tool"}
 )
-def delete_cache(cache_name: str, cache_config: Dict[str, Any]) -> UtilResponse:
+async def delete_cache(cache_name: str) -> UtilResponse:
     """
     删除缓存配置
 
     Args:
         cache_name: 缓存名称
-        cache_config: 缓存配置字典
 
     Returns:
         通用响应
     """
     settings = get_settings()
-    result = settings.delete_cache(cache_name, CacheConfig.model_validate(cache_config))
+    result = check_result(settings.delete_cache(cache_name))
     settings.store()
-    return check_result(result)
+    return result

@@ -1,3 +1,12 @@
+## [0.3.1] - 2026-05-7
+
+### Changed
+
+- **配置删除接口优化**：
+    - 重命名 `get_config_path` 为 `get_toml_config`，更清晰地表达获取 TOML 配置路径的用途。
+    - 重构 [`_delete_config`](fund_nav_mcp/config.py) 方法，参数从 `(name, config)` 改为 `(_class, name)`，直接通过 `_class` 文本区分 `"db"` 或 `"cache"`，不再依赖传入完整配置对象推断类型。
+    - 相应地，[`delete_database`](fund_nav_mcp/config.py) 和 [`delete_cache`](fund_nav_mcp/config.py) 公共方法移除多余的 `db_config` / `cache_config` 参数，仅保留名称参数，简化了 MCP 工具调用时的传参要求。
+
 ## [0.3.0] - 2026-05-7
 
 ### Added

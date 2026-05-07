@@ -1,4 +1,4 @@
-__all__ = ["PROJECT_ROOT", "load_env", "get_config_path"]
+__all__ = ["PROJECT_ROOT", "load_env", "get_config_path", "get_toml_config"]
 
 import os
 from pathlib import Path
@@ -25,7 +25,10 @@ def load_env():
 load_env()
 
 
-def get_config_path(env: str | None = None) -> Path:
+def get_config_path() -> Path:
+    return PROJECT_ROOT / "configs"
+
+def get_toml_config(env: str | None = None) -> Path:
     """
     根据环境变量和本地覆盖确定最终配置文件路径。
 
@@ -37,7 +40,7 @@ def get_config_path(env: str | None = None) -> Path:
     """
     import os
 
-    config_dir = PROJECT_ROOT / "configs"
+    config_dir = get_config_path()
     if env is None:
         env = os.getenv("MCP_ENV", "dev").lower()
     env_config_file = config_dir / f"config.{env}.toml"

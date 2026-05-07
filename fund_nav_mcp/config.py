@@ -3,7 +3,7 @@ from __future__ import annotations
 __all__ = ['MCPSettings', 'setup_settings', 'get_settings', 'store_settings']
 
 import os
-from typing import Any, Dict, Mapping, cast, Union, Optional, Tuple, Annotated
+from typing import Any, Dict, Mapping, cast, Union, Optional, Tuple, Annotated, Literal
 
 import tomli_w
 from pydantic import Field, model_validator, SecretStr
@@ -13,9 +13,9 @@ from fund_nav_mcp.models.common import UtilResponse
 from fund_nav_mcp.models.schemas import (
     DatabaseConfig, CacheConfig, SQLiteConfig, MySQLConfig, PostgresqlConfig, InfluxDBConfig, RedisConfig)
 from fund_nav_mcp.utils.enums import Errcode
-from fund_nav_mcp.utils.path_utils import get_config_path
+from fund_nav_mcp.utils.path_utils import get_toml_config
 
-_CONFIG_PATH = get_config_path()
+_TOML_CONFIG = get_toml_config()
 
 
 class MCPSettings(BaseSettings):
@@ -52,7 +52,7 @@ class MCPSettings(BaseSettings):
     default_currency: str = "CNY"  # 用于处理货币相关的计算和显示，默认人民币
 
     model_config = SettingsConfigDict(
-        toml_file=_CONFIG_PATH,  # TOML 文件路径
+        toml_file=_TOML_CONFIG,  # TOML 文件路径
         env_prefix="MCP_",  # 环境变量前缀，如 MCP_DEBUG=true
         env_nested_delimiter="__",  # 嵌套字段分隔符，如 MCP_DATABASE__URL=xxx
         validate_assignment=True,
@@ -61,7 +61,7 @@ class MCPSettings(BaseSettings):
 
     def __init__(self, **data: Any):
         super().__init__(**data)
-        if not _CONFIG_PATH.exists():
+        if not _TOML_CONFIG.exists():
             self.store()
 
     @classmethod
@@ -172,7 +172,7 @@ class MCPSettings(BaseSettings):
         storage[name] = config
         return UtilResponse(code=Errcode.SUCCESS, message=f"{config_type}配置 {name} 修改成功")
 
-    def _delete_config(self, name: str, config: Union[DatabaseConfig, CacheConfig]) -> UtilResponse:
+    def _delete_config(self, _class: Literal["db", "cache"], name: str) -> UtilResponse:
         """
         删除配置项
 
@@ -182,11 +182,18 @@ class MCPSettings(BaseSettings):
         Returns:
             通用响应
         """
-        storage, config_type = self.get_storage(config)
-        if name in storage:
-            del storage[name]
-            return UtilResponse(code=Errcode.SUCCESS, message=f"{config_type}配置 {name} 删除成功")
-        return UtilResponse(code=Errcode.RECORD_NOT_FOUND, message=f"{config_type}配置 {name} 不存在，无法删除")
+        if _class == "db":
+            if name not in self.databases:
+                return UtilResponse(code=Errcode.RECORD_NOT_FOUND, message=f"数据库配置 {name} 不存在，无法删除")
+            del self.databases[name]
+            return UtilResponse(code=Errcode.SUCCESS, message=f"数据库配置 {name} 删除成功")
+        elif _class == "cache":
+            if name not in self.caches:
+                return UtilResponse(code=Errcode.RECORD_NOT_FOUND, message=f"缓存配置 {name} 不存在，无法删除")
+            del self.caches[name]
+            return UtilResponse(code=Errcode.SUCCESS, message=f"缓存配置 {name} 删除成功")
+        else:
+            return UtilResponse(code=Errcode.TOOL_INVALID_PARAMS, message=f"未知配置类型: {_class}")
 
     def add_database(self, db_name: str, db_config: DatabaseConfig) -> UtilResponse:
         """添加数据库配置"""
@@ -196,9 +203,9 @@ class MCPSettings(BaseSettings):
         """更新数据库配置"""
         return self._update_config(db_name, db_config, new_db_name)
 
-    def delete_database(self, db_name: str, db_config: DatabaseConfig) -> UtilResponse:
+    def delete_database(self, db_name: str) -> UtilResponse:
         """删除数据库配置"""
-        return self._delete_config(db_name, db_config)
+        return self._delete_config("db", db_name)
 
     def add_cache(self, cache_name: str, cache_config: CacheConfig) -> UtilResponse:
         """添加缓存配置"""
@@ -208,9 +215,9 @@ class MCPSettings(BaseSettings):
         """更新缓存配置"""
         return self._update_config(cache_name, cache_config, new_cache_name)
 
-    def delete_cache(self, cache_name: str, cache_config: CacheConfig) -> UtilResponse:
+    def delete_cache(self, cache_name: str) -> UtilResponse:
         """删除缓存配置"""
-        return self._delete_config(cache_name, cache_config)
+        return self._delete_config("cache", cache_name)
 
     @staticmethod
     def test_connection(config: Union[DatabaseConfig, CacheConfig]) -> UtilResponse:
@@ -262,8 +269,8 @@ class MCPSettings(BaseSettings):
         Returns:
             None
         """
-        _CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-        _CONFIG_PATH.write_text(self._to_toml(), encoding="utf-8")
+        _TOML_CONFIG.parent.mkdir(parents=True, exist_ok=True)
+        _TOML_CONFIG.write_text(self._to_toml(), encoding="utf-8")
 
 
 _settings = None
