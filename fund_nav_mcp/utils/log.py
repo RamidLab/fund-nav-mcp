@@ -709,7 +709,10 @@ class LoggingManager:
             except Exception:
                 pass
         if self._listener_proc:
-            self._listener_proc.join(timeout=5)
+            self._listener_proc.join(timeout=3)
+            if self._listener_proc.is_alive():
+                self._listener_proc.terminate()
+                self._listener_proc.join(timeout=1)
 
     @staticmethod
     def _setup_logger(logger: logging.Logger, queue: multiprocessing.Queue, level: int) -> ContextAdapter:
