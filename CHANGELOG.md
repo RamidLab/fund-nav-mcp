@@ -1,3 +1,23 @@
+## [0.8.0] 2026-05-09
+
+### Added
+
+- **模型工厂**：新增 [`builder.py`](fund_nav_mcp/models/pydantic/builder.py) 模块，提供 `create_filter_class` 与 `create_search_class` 两个动态模型工厂函数，以及配套的列选择、类型推断、抽象方法清理等内部辅助函数。从此可根据 ORM 模型一键生成完整的 Filter / Search 类，无需手写任何字段或查询方法。
+
+### Changed
+
+- **Filter / Search 全面工厂化**：所有实体（Fund、FundManager、FundManagerPerson）的筛选和搜索类全部改为调用工厂生成，支持通过 `include` / `exclude` / `date_range_mappings` / `relation_mappings` 等参数灵活配置，字段类型自动推断，调用侧代码量减少超过 60%。
+
+### Fixed
+
+- **关系搜索修正**：修复在关键词搜索和字段搜索中，当关系为一对多（集合）时错误使用 `has()` 导致的运行时异常。现在工厂内部根据 `uselist` 自动选用 `any()`，确保搜索功能正常。
+
+### Removed
+
+- 移除了手写的 `FundFilter`、`FundManagerFilter`、`FundManagerPersonFilter` 类定义。
+- 移除了手写的 `FundSearchByKeyword`、`FundSearchByFields`、`FundManagerSearchByKeyword`、`FundManagerSearchByFields`、`FundManagerPersonSearchByKeyword`、`FundManagerPersonSearchByFields` 类定义。
+- 以上手写类中的 `to_where`、`to_order_by`、`_or_conditions`、`_column_mappings`、`_relation_mappings` 等方法全部删除，相应逻辑已由工厂自动注入。
+
 ## [0.7.0] - 2026-05-08
 
 ### Added
