@@ -526,10 +526,6 @@ async def main():
 
             logger.info(f"所有 mock 数据已成功生成并插入 {item} 数据库")
 
-            # 健康检查
-            healthy = await mgr.health_check()
-            logger.info(f"数据库 {item} 健康状态: {'正常' if healthy else '异常'}")
-
         except Exception as e:
             logger.exception(f"处理数据库 {item} 时发生错误: {e}")
 

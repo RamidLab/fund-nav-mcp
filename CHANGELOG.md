@@ -1,3 +1,21 @@
+## [0.5.0] - 2026-05-08
+
+### Added
+
+- **基金筛选与搜索模型分离**：
+    - 新增 [`FundFilter`](fund_nav_mcp/models/pydantic/filter.py) 筛选模型，支持基金类型、监管类型、状态、日期区间等精确过滤及自定义排序。
+    - 新增 [`FundSearchByKeyword`](fund_nav_mcp/models/pydantic/search.py) 关键词搜索模型，一键 OR 搜索基金代码、名称、托管人、管理人、经理。
+    - 新增 [`FundSearchByFields`](fund_nav_mcp/models/pydantic/search.py) 字段组合搜索模型，支持 AND/OR 逻辑切换、全局及字段级精确/模糊匹配。
+    - 新增 [`SearchField`](fund_nav_mcp/models/pydantic/search.py) 通用搜索字段，允许客户端传入简写字符串（默认模糊）或完整对象（自定义模式）。
+- **基金列表工具**：
+    - [`get_fund_list`](fund_nav_mcp/tools/fund_tools.py) 作为筛选工具，配合 `FundFilter` 使用。
+    - [`search_funds_by_keyword`](fund_nav_mcp/tools/fund_tools.py) 和 [`search_funds_by_fields`](fund_nav_mcp/tools/fund_tools.py) 分别处理关键词与高级组合搜索。
+
+### Changed
+
+- **数据库管理器增强**：`get_manager` 内建连接与健康检查，确保返回的管理器始终可用，工具层不再做重复检查。
+- **Fund 模型精简**：移除冗余字段，保持模型简洁。
+
 ## [0.4.0] - 2026-05-08
 
 ### Added

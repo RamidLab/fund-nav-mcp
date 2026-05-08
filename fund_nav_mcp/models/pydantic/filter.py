@@ -1,3 +1,5 @@
+__all__ = ['FundFilter']
+
 from datetime import date
 from typing import Optional, Literal, List, Any
 
@@ -10,18 +12,12 @@ from fund_nav_mcp.utils.enums import FundType, FundRegulatoryType, FundStatus, F
 
 class FundFilter(BaseModel):
     """基金列表过滤器"""
-    fund_code: Optional[str] = Field(
-        default=None, title="基金代码", description="基金代码，精确匹配")
-    fund_name: Optional[str] = Field(
-        default=None, title="基金名称", description="基金名称，模糊匹配")
     fund_type: Optional[FundType] = Field(
         default=None, title="基金投资类型", description="基金投资类型")
     fund_regulatory_type: Optional[FundRegulatoryType] = Field(
         default=None, title="监管类型")
     fund_management_type: Optional[FundManagementType] = Field(
         default=None, title="基金管理类型", description="基金管理类型")
-    fund_custodian: Optional[str] = Field(
-        default=None, title="基金托管人", description="基金托管人，模糊匹配")
     establishment_date_start: Optional[date] = Field(
         default=None, title="成立日期起始", description="成立日期起始，含当日")
     establishment_date_end: Optional[date] = Field(
@@ -58,23 +54,15 @@ class FundFilter(BaseModel):
         """
         conditions = []
 
-        # 精确匹配 / 模糊匹配 统一处理
-        map_conditions = [
-            (self.fund_code, model.fund_code, "eq"),
-            (self.fund_name, model.fund_name, "like"),
-            (self.fund_type, model.fund_type, "eq"),
-            (self.fund_regulatory_type, model.fund_regulatory_type, "eq"),
-            (self.fund_management_type, model.fund_management_type, "eq"),
-            (self.fund_custodian, model.fund_custodian, "like"),
-            (self.status, model.status, "eq"),
-        ]
-        for value, column, op in map_conditions:
-            if value is None:
-                continue
-            if op == "eq":
-                conditions.append(column == value)
-            elif op == "like":
-                conditions.append(column.ilike(f"%{value}%"))
+        # 枚举字段精确匹配
+        for value, col in [
+            (self.fund_type, model.fund_type),
+            (self.fund_regulatory_type, model.fund_regulatory_type),
+            (self.fund_management_type, model.fund_management_type),
+            (self.status, model.status),
+        ]:
+            if value is not None:
+                conditions.append(col == value)
 
         # 日期区间
         self._add_date_range(

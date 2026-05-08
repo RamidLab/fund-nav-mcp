@@ -20,6 +20,7 @@ from sqlalchemy.orm import DeclarativeBase
 
 from fund_nav_mcp.config import get_settings
 from fund_nav_mcp.db import RdbmsDBManager, TimeseriesDBManager
+from fund_nav_mcp.error.exceptions import DatabaseConnectionError
 from fund_nav_mcp.models.orm.base import Base
 from fund_nav_mcp.models.schemas import InfluxDBConfig, PaginationParams, PageData
 
@@ -484,6 +485,10 @@ async def get_manager(_class: Literal["db", "cache"], db_name: str) -> Dict[str,
             bucket=bucket,
         )
         await influxdb_manager.connect()
+
+        if not await influxdb_manager.health_check():
+            raise DatabaseConnectionError(f"InfluxDB {db_name} 连接成功但健康检查失败")
+
         manager_cache[db_name] = {
             "mgr": influxdb_manager,
             "db_type": db_config.db_type,
@@ -496,6 +501,10 @@ async def get_manager(_class: Literal["db", "cache"], db_name: str) -> Dict[str,
             max_overflow=10,
         )
         await db_manager.connect()
+
+        if not await db_manager.health_check():
+            raise DatabaseConnectionError(f"数据库 {db_name} 连接成功但健康检查失败")
+
         manager_cache[db_name] = {
             "mgr": db_manager,
             "db_type": db_config.db_type,
