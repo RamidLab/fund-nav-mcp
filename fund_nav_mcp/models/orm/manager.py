@@ -6,7 +6,6 @@ from typing import List, Optional, TYPE_CHECKING
 from sqlalchemy import String, Date, DateTime, DECIMAL, Integer, Text, Index, ForeignKeyConstraint, UniqueConstraint, \
     text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.sql import func
 
 from fund_nav_mcp.models.orm.base import Base
 from fund_nav_mcp.utils.enums import ManagementScaleRange
@@ -50,8 +49,8 @@ class FundManager(Base):
 
     # 关系
     funds: Mapped[List['Fund']] = relationship('Fund', back_populates='manager')
-    manager_person: Mapped[List['FundManagerPerson']] = relationship('FundManagerPerson',
-                                                                     back_populates='current_company')
+    manager_person: Mapped[List['FundManagerPerson']] = relationship(
+        'FundManagerPerson', back_populates='current_company')
 
     __table_args__ = (
         Index('idx_company_name', 'company_name'),  # 查找公司
@@ -72,8 +71,8 @@ class FundManagerPerson(Base):
     is_qualified: Mapped[bool] = mapped_column(default=True, comment='是否有基金从业资格')
     resume: Mapped[Optional[str]] = mapped_column(Text, comment='工作履历')
     current_company_id: Mapped[Optional[int]] = mapped_column(Integer, comment='当前任职公司ID')
-    created_at: Mapped[DateTime] = mapped_column(DateTime, default=func.now())
-    updated_at: Mapped[DateTime] = mapped_column(DateTime, default=func.now(), onupdate=func.now())
+    created_at: Mapped[DateTime] = mapped_column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
+    updated_at: Mapped[DateTime] = mapped_column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
 
     # 关系
     current_company: Mapped['FundManager'] = relationship('FundManager', back_populates='manager_person')

@@ -1,4 +1,7 @@
-__all__ = ['FundSearchByKeyword', 'FundSearchByFields', 'FundManagerSearchByKeyword', 'FundManagerSearchByFields']
+__all__ = [
+    'FundSearchByKeyword', 'FundSearchByFields', 'FundManagerSearchByKeyword', 'FundManagerSearchByFields',
+    'FundManagerPersonSearchByKeyword', 'FundManagerPersonSearchByFields',
+]
 
 from typing import Optional, List, Tuple, Any
 
@@ -14,8 +17,7 @@ class FundSearchByKeyword(BaseSearchByKeyword):
     """基金关键词搜索"""
 
     def _or_conditions(self) -> List[ColumnElement[bool]]:
-        fuzzy = self.match_mode == "fuzzy"
-        expr = f"%{self.keyword}%" if fuzzy else self.keyword
+        expr, fuzzy = self._get_search_params()
         return [
             Fund.fund_code.ilike(expr) if fuzzy else Fund.fund_code == expr,
             Fund.fund_name.ilike(expr) if fuzzy else Fund.fund_name == expr,
@@ -34,11 +36,11 @@ class FundSearchByFields(BaseSearchByFields):
     fund_code: Optional[SearchField] = Field(default=None, title="基金代码")
     fund_name: Optional[SearchField] = Field(default=None, title="基金名称")
     manager_name: Optional[SearchField] = Field(default=None, title="基金管理人（机构）")
-    person_name: Optional[SearchField] = Field(default=None, title="基金管理人（个人）")
+    manager_person_name: Optional[SearchField] = Field(default=None, title="基金管理人（个人）")
     fund_custodian: Optional[SearchField] = Field(default=None, title="基金托管人")
 
     @property
-    def _column_mappings(self) -> List[Tuple[str, InstrumentedAttribute[Optional[str]]]]:
+    def _column_mappings(self) -> List[Tuple[str, InstrumentedAttribute]]:
         return [
             ('fund_code', Fund.fund_code),
             ('fund_name', Fund.fund_name),
@@ -49,7 +51,7 @@ class FundSearchByFields(BaseSearchByFields):
     def _relation_mappings(self) -> List[Tuple[str, str, Any, str]]:
         return [
             ('manager_name', 'manager', FundManager, 'company_name'),
-            ('person_name', 'manager_person', FundManagerPerson, 'name'),
+            ('manager_person_name', 'manager_person', FundManagerPerson, 'name'),
         ]
 
     @staticmethod
@@ -61,8 +63,7 @@ class FundManagerSearchByKeyword(BaseSearchByKeyword):
     """基金管理人关键词搜索"""
 
     def _or_conditions(self) -> List[ColumnElement[bool]]:
-        fuzzy = self.match_mode == "fuzzy"
-        expr = f"%{self.keyword}%" if fuzzy else self.keyword
+        expr, fuzzy = self._get_search_params()
         return [
             FundManager.company_name.ilike(expr) if fuzzy else FundManager.company_name == expr,
             FundManager.english_name.ilike(expr) if fuzzy else FundManager.english_name == expr,
@@ -87,9 +88,11 @@ class FundManagerSearchByFields(BaseSearchByFields):
     actual_controller: Optional[SearchField] = Field(default=None, title="实际控制人")
     registered_address: Optional[SearchField] = Field(default=None, title="注册地址")
     office_address: Optional[SearchField] = Field(default=None, title="办公地址")
+    fund_list: Optional[SearchField] = Field(default=None, title="管理基金代码列表")
+    manager_person_list: Optional[SearchField] = Field(default=None, title="基金管理人（个人）列表")
 
     @property
-    def _column_mappings(self) -> List[Tuple[str, InstrumentedAttribute[Optional[str]]]]:
+    def _column_mappings(self) -> List[Tuple[str, InstrumentedAttribute]]:
         return [
             ('company_name', FundManager.company_name),
             ('english_name', FundManager.english_name),
@@ -102,6 +105,61 @@ class FundManagerSearchByFields(BaseSearchByFields):
             ('office_address', FundManager.office_address),
         ]
 
+    @property
+    def _relation_mappings(self) -> List[Tuple[str, str, Any, str]]:
+        return [
+            ('fund_list', 'funds', Fund, 'fund_code'),
+            ('manager_person_list', 'manager_person', FundManagerPerson, 'name'),
+        ]
+
     @staticmethod
     def _model_class() -> type:
         return FundManager
+
+
+class FundManagerPersonSearchByKeyword(BaseSearchByKeyword):
+    """基金经理关键词搜索"""
+
+    def _or_conditions(self) -> List[ColumnElement[bool]]:
+        expr, fuzzy = self._get_search_params()
+        return [
+            FundManagerPerson.name.ilike(expr) if fuzzy else FundManagerPerson.name == expr,
+            FundManagerPerson.education.ilike(expr) if fuzzy else FundManagerPerson.education == expr,
+            FundManagerPerson.qualification_number.ilike(
+                expr) if fuzzy else FundManagerPerson.qualification_number == expr,
+            FundManagerPerson.resume.ilike(expr) if fuzzy else FundManagerPerson.resume == expr,
+            # 通过关联公司名称搜索
+            FundManagerPerson.current_company.has(
+                FundManager.company_name.ilike(expr) if fuzzy else FundManager.company_name == expr
+            ),
+        ]
+
+
+class FundManagerPersonSearchByFields(BaseSearchByFields):
+    """基金经理字段搜索"""
+    name: Optional[SearchField] = None
+    education: Optional[SearchField] = None
+    qualification_number: Optional[SearchField] = None
+    resume: Optional[SearchField] = None
+    company_name: Optional[SearchField] = None
+    fund_list: Optional[SearchField] = Field(default=None, title="管理基金名称列表")
+
+    @property
+    def _column_mappings(self) -> List[Tuple[str, InstrumentedAttribute]]:
+        return [
+            ('name', FundManagerPerson.name),
+            ('education', FundManagerPerson.education),
+            ('qualification_number', FundManagerPerson.qualification_number),
+            ('resume', FundManagerPerson.resume),
+        ]
+
+    @property
+    def _relation_mappings(self) -> List[Tuple[str, str, Any, str]]:
+        return [
+            ('company_name', 'current_company', FundManager, 'company_name'),
+            ('fund_list', 'funds', Fund, 'fund_code'),
+        ]
+
+    @staticmethod
+    def _model_class() -> type:
+        return FundManagerPerson

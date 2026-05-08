@@ -1,19 +1,48 @@
 __all__ = [
-    "get_fund_list",
+    "get_fund_list", "search_funds_by_keyword", "search_funds_by_fields",
+    "get_fund_manager_list", "search_fund_manager_by_keyword", "search_fund_manager_by_fields",
+    "get_fund_manager_person_list", "search_fund_manager_person_by_keyword", "search_fund_manager_person_by_fields",
 ]
 
-from typing import Optional
+from typing import Optional, Type, Union
 
 from fastmcp.tools import tool
+from sqlalchemy.orm import DeclarativeBase
 
 from fund_nav_mcp.db.core import get_manager
 from fund_nav_mcp.models.common import UtilResponse
-from fund_nav_mcp.models.orm import Fund, FundManager
-from fund_nav_mcp.models.pydantic.filter import FundFilter, FundManagerFilter
+from fund_nav_mcp.models.orm import Fund, FundManager, FundManagerPerson
+from fund_nav_mcp.models.pydantic import BaseFilter, BaseSearchByKeyword, BaseSearchByFields
+from fund_nav_mcp.models.pydantic.filter import FundFilter, FundManagerFilter, FundManagerPersonFilter
 from fund_nav_mcp.models.pydantic.search import (
-    FundSearchByKeyword, FundSearchByFields, FundManagerSearchByKeyword, FundManagerSearchByFields)
+    FundSearchByKeyword, FundSearchByFields, FundManagerSearchByKeyword, FundManagerSearchByFields,
+    FundManagerPersonSearchByKeyword, FundManagerPersonSearchByFields)
 from fund_nav_mcp.models.schemas import PaginationParams
 from fund_nav_mcp.utils.enums import Errcode
+
+
+async def _execute_paginated_query(
+        model: Type[DeclarativeBase],
+        params: PaginationParams,
+        filter_or_search: Union[BaseFilter, BaseSearchByKeyword, BaseSearchByFields, None],
+        db_name: str
+) -> UtilResponse:
+    mgr = (await get_manager("db", db_name))["mgr"]
+
+    where = None
+    order_by = None
+
+    if filter_or_search is not None:
+        if isinstance(filter_or_search, BaseFilter):
+            where = filter_or_search.to_where()
+            order_by = filter_or_search.to_order_by()
+        elif isinstance(filter_or_search, (BaseSearchByKeyword, BaseSearchByFields)):
+            where = filter_or_search.to_where()
+        else:
+            raise TypeError(f"不支持的过滤器类型: {type(filter_or_search)}")
+
+    page_data = await mgr.paginate(model, params, where=where, order_by=order_by)
+    return UtilResponse(code=Errcode.SUCCESS, message="成功", data=page_data)
 
 
 @tool(
@@ -37,17 +66,7 @@ async def get_fund_list(
     Returns:
         通用响应
     """
-    mgr = (await get_manager("db", db_name))["mgr"]
-    where = filters.to_where(Fund) if filters else None
-    order_by = filters.to_order_by(Fund) if filters else None
-
-    page_data = await mgr.paginate(
-        model=Fund,
-        params=params,
-        where=where,
-        order_by=order_by
-    )
-    return UtilResponse(code=Errcode.SUCCESS, message="成功", data=page_data)
+    return await _execute_paginated_query(Fund, params, filters, db_name)
 
 
 @tool(
@@ -72,9 +91,7 @@ async def search_funds_by_keyword(
     Returns:
         通用响应，包含分页的基金列表
     """
-    mgr = (await get_manager("db", db_name))["mgr"]
-    page_data = await mgr.paginate(Fund, params, where=keyword.to_where())
-    return UtilResponse(code=Errcode.SUCCESS, message="成功", data=page_data)
+    return await _execute_paginated_query(Fund, params, keyword, db_name)
 
 
 @tool(
@@ -101,9 +118,7 @@ async def search_funds_by_fields(
     Returns:
         通用响应，包含分页的基金列表
     """
-    mgr = (await get_manager("db", db_name))["mgr"]
-    page_data = await mgr.paginate(Fund, params, where=search.to_where())
-    return UtilResponse(code=Errcode.SUCCESS, message="成功", data=page_data)
+    return await _execute_paginated_query(Fund, params, search, db_name)
 
 
 @tool(
@@ -128,11 +143,7 @@ async def get_fund_manager_list(
     Returns:
         通用响应，包含分页的基金管理人（机构）列表
     """
-    mgr = (await get_manager("db", db_name))["mgr"]
-    where = filters.to_where(FundManager) if filters else None
-    order_by = filters.to_order_by(FundManager) if filters else None
-    page_data = await mgr.paginate(FundManager, params, where=where, order_by=order_by)
-    return UtilResponse(code=Errcode.SUCCESS, message="成功", data=page_data)
+    return await _execute_paginated_query(FundManager, params, filters, db_name)
 
 
 @tool(
@@ -157,9 +168,7 @@ async def search_fund_manager_by_keyword(
     Returns:
         通用响应，包含分页的基金管理人（机构）列表
     """
-    mgr = (await get_manager("db", db_name))["mgr"]
-    page_data = await mgr.paginate(FundManager, params, where=keyword.to_where())
-    return UtilResponse(code=Errcode.SUCCESS, message="成功", data=page_data)
+    return await _execute_paginated_query(FundManager, params, keyword, db_name)
 
 
 @tool(
@@ -186,6 +195,49 @@ async def search_fund_manager_by_fields(
     Returns:
         通用响应，包含分页的基金列表
     """
-    mgr = (await get_manager("db", db_name))["mgr"]
-    page_data = await mgr.paginate(FundManager, params, where=search.to_where())
-    return UtilResponse(code=Errcode.SUCCESS, message="成功", data=page_data)
+    return await _execute_paginated_query(FundManager, params, search, db_name)
+
+
+@tool(
+    name="get_fund_manager_person_list",
+    title="获取基金管理人（个人）列表",
+    description="获取基金管理人（个人）列表，支持筛选和排序",
+    tags={"fund_tool"}
+)
+async def get_fund_manager_person_list(
+        params: PaginationParams = PaginationParams(),
+        filters: Optional[FundManagerPersonFilter] = None,
+        db_name: str = "default"
+) -> UtilResponse:
+    """获取基金经理列表"""
+    return await _execute_paginated_query(FundManagerPerson, params, filters, db_name)
+
+
+@tool(
+    name="search_fund_manager_person_by_keyword",
+    title="搜索基金管理人（个人）",
+    description="根据关键词搜索基金管理人（个人），支持姓名、学历、资格证号、履历及所属公司",
+    tags={"fund_tool"}
+)
+async def search_fund_manager_person_by_keyword(
+        keyword: FundManagerPersonSearchByKeyword,
+        params: PaginationParams = PaginationParams(),
+        db_name: str = "default"
+) -> UtilResponse:
+    """关键词搜索基金经理"""
+    return await _execute_paginated_query(FundManagerPerson, params, keyword, db_name)
+
+
+@tool(
+    name="search_fund_manager_person_by_fields",
+    title="高级搜索基金管理人（个人）",
+    description="根据基金管理人（个人）字段进行高级搜索，支持字段级匹配模式控制",
+    tags={"fund_tool"}
+)
+async def search_fund_manager_person_by_fields(
+        search: FundManagerPersonSearchByFields,
+        params: PaginationParams = PaginationParams(),
+        db_name: str = "default"
+) -> UtilResponse:
+    """高级搜索基金经理"""
+    return await _execute_paginated_query(FundManagerPerson, params, search, db_name)

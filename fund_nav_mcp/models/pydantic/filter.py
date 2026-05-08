@@ -1,12 +1,12 @@
-__all__ = ['FundFilter', 'FundManagerFilter']
+__all__ = ['FundFilter', 'FundManagerFilter', 'FundManagerPersonFilter']
 
 from datetime import date
-from typing import Optional, Literal, List, Any
+from typing import Optional, Literal, List, Tuple
 
 from pydantic import Field
-from sqlalchemy import ColumnElement
+from sqlalchemy.orm import InstrumentedAttribute
 
-from fund_nav_mcp.models.orm import Fund, FundManager
+from fund_nav_mcp.models.orm import Fund, FundManager, FundManagerPerson
 from fund_nav_mcp.models.pydantic import BaseFilter
 from fund_nav_mcp.utils.enums import FundType, FundRegulatoryType, FundStatus, FundManagementType, ManagementScaleRange
 
@@ -22,6 +22,11 @@ MANAGER_SORT_FIELDS = Literal[
     "office_address", "employee_count", "fund_industry_count",
     "management_scale_range", "actual_controller", "is_member",
     "legal_representative", "updated_at"
+]
+PERSON_SORT_FIELDS = Literal[
+    "name", "gender", "birth_date", "education",
+    "qualification_number", "is_qualified", "current_company_id",
+    "created_at", "updated_at"
 ]
 
 
@@ -46,30 +51,25 @@ class FundFilter(BaseFilter):
     sort_by: Optional[FUND_SORT_FIELDS] = Field(
         default=None, title="排序字段", description="排序字段，支持 '-field' 降序")
 
-    def to_where(self, model: type[Fund]) -> List[ColumnElement[bool]]:
-        conditions: List[ColumnElement[bool]] = []
+    @property
+    def _filter_mappings(self) -> List[Tuple[str, InstrumentedAttribute]]:
+        return [
+            ('fund_type', Fund.fund_type),
+            ('fund_regulatory_type', Fund.fund_regulatory_type),
+            ('fund_management_type', Fund.fund_management_type),
+            ('status', Fund.status),
+        ]
 
-        # 枚举字段精确匹配
-        for value, col in [
-            (self.fund_type, model.fund_type),
-            (self.fund_regulatory_type, model.fund_regulatory_type),
-            (self.fund_management_type, model.fund_management_type),
-            (self.status, model.status),
-        ]:
-            if value is not None:
-                conditions.append(col == value)
+    @property
+    def _date_ranges(self) -> List[Tuple[str, str, InstrumentedAttribute]]:
+        return [
+            ('establishment_date_start', 'establishment_date_end', Fund.establishment_date),
+            ('registration_date_start', 'registration_date_end', Fund.registration_date),
+        ]
 
-        # 日期区间
-        self._add_date_range(model.establishment_date,
-                             self.establishment_date_start,
-                             self.establishment_date_end, conditions)
-        self._add_date_range(model.registration_date,
-                             self.registration_date_start,
-                             self.registration_date_end, conditions)
-        return conditions
-
-    def to_order_by(self, model: type[Fund]) -> List[ColumnElement[Any]]:
-        return self._build_order_by(model, self.sort_by)
+    @staticmethod
+    def _model_class():
+        return Fund
 
 
 class FundManagerFilter(BaseFilter):
@@ -83,17 +83,50 @@ class FundManagerFilter(BaseFilter):
     sort_by: Optional[MANAGER_SORT_FIELDS] = Field(
         default=None, title="排序字段", description="排序字段，支持 '-field' 降序")
 
-    def to_where(self, model: type[FundManager]) -> List[ColumnElement[bool]]:
-        conditions: List[ColumnElement[bool]] = []
-        if self.management_scale_range is not None:
-            conditions.append(model.management_scale_range == self.management_scale_range)
-        if self.is_member is not None:
-            conditions.append(model.is_member == self.is_member)
+    @property
+    def _filter_mappings(self) -> List[Tuple[str, InstrumentedAttribute]]:
+        return [
+            ('management_scale_range', FundManager.management_scale_range),
+            ('is_member', FundManager.is_member),
+        ]
 
-        self._add_date_range(model.amac_registration_date,
-                             self.amac_registration_date_start,
-                             self.amac_registration_date_end, conditions)
-        return conditions
+    @property
+    def _date_ranges(self) -> List[Tuple[str, str, InstrumentedAttribute]]:
+        return [
+            ('amac_registration_date_start', 'amac_registration_date_end', FundManager.amac_registration_date),
+        ]
 
-    def to_order_by(self, model: type[FundManager]) -> List[ColumnElement[Any]]:
-        return self._build_order_by(model, self.sort_by)
+    @staticmethod
+    def _model_class():
+        return FundManager
+
+
+class FundManagerPersonFilter(BaseFilter):
+    """基金经理/投资经理列表过滤器"""
+    gender: Optional[Literal["男", "女"]] = Field(default=None, title="性别")
+    education: Optional[Literal["本科", "硕士", "博士"]] = Field(default=None, title="学历")
+    is_qualified: Optional[bool] = Field(default=None, title="是否具有从业资格")
+    birth_date_start: Optional[date] = Field(default=None, title="出生日期起始", description="出生日期起始，含当日")
+    birth_date_end: Optional[date] = Field(default=None, title="出生日期截止", description="出生日期截止，含当日")
+    current_company_id: Optional[int] = Field(default=None, title="当前任职公司 ID", description="当前任职公司 ID")
+    sort_by: Optional[PERSON_SORT_FIELDS] = Field(
+        default=None, title="排序字段", description="排序字段，支持 '-field' 降序")
+
+    @property
+    def _filter_mappings(self) -> List[Tuple[str, InstrumentedAttribute]]:
+        return [
+            ('gender', FundManagerPerson.gender),
+            ('education', FundManagerPerson.education),
+            ('is_qualified', FundManagerPerson.is_qualified),
+            ('current_company_id', FundManagerPerson.current_company_id),
+        ]
+
+    @property
+    def _date_ranges(self) -> List[Tuple[str, str, InstrumentedAttribute]]:
+        return [
+            ('birth_date_start', 'birth_date_end', FundManagerPerson.birth_date),
+        ]
+
+    @staticmethod
+    def _model_class():
+        return FundManagerPerson

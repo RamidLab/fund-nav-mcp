@@ -1,3 +1,24 @@
+## [0.7.0] - 2026-05-08
+
+### Added
+
+- **基金经理/投资经理查询维度**：
+    - 新增 [`FundManagerPersonFilter`](fund_nav_mcp/models/pydantic/filter.py) 筛选模型，支持性别、学历、从业资格、出生日期区间、所属公司等精确筛选及排序。
+    - 新增 [`FundManagerPersonSearchByKeyword`](fund_nav_mcp/models/pydantic/search.py) 关键词搜索模型，一键搜索姓名、学历、资格证号、履历及关联公司名称。
+    - 新增 [`FundManagerPersonSearchByFields`](fund_nav_mcp/models/pydantic/search.py) 高级字段搜索模型，支持字段级精确/模糊控制与 AND/OR 切换。
+    - 新增 [`get_fund_manager_person_list`](fund_nav_mcp/tools/fund_tools.py)、[`search_persons_by_keyword`](fund_nav_mcp/tools/fund_tools.py)、[`search_persons_by_fields`](fund_nav_mcp/tools/fund_tools.py) 三个工具，覆盖基金经理个人维度的列表、关键词搜索及高级组合搜索。
+
+- **通用查询辅助函数**：
+    - 新增 `_execute_paginated_query` 内部函数，统一处理筛选、搜索模型的分页查询逻辑，消除工具函数间的重复代码。
+
+### Changed
+
+- **查询体系全面重构**：
+    - 抽象基类 [`BaseFilter`](fund_nav_mcp/models/pydantic/__init__.py) 的 `to_where` 与 `to_order_by` 改为无参方法，由子类声明 `_filter_mappings`（字段→列映射）与 `_date_ranges`（日期区间映射）自动生成条件。
+    - 所有筛选子类（`FundFilter`、`FundManagerFilter`、`FundManagerPersonFilter`）移除了手写的查询生成代码，仅保留字段定义与映射属性，极简化子类实现。
+    - 抽象基类 [`BaseSearchByKeyword`](fund_nav_mcp/models/pydantic/search.py) 与 [`BaseSearchByFields`](fund_nav_mcp/models/pydantic/search.py) 引入，彻底消除基金、管理人、经理人员搜索模型间的重复逻辑，使新实体扩展仅需定义 OR 条件或字段映射。
+    - 工具层通过 `_execute_paginated_query` 实现统一调用，每个工具函数降为一行核心业务调用，维护性显著提升。
+
 ## [0.6.0] - 2026-05-08
 
 ### Added

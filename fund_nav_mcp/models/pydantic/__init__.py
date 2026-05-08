@@ -1,9 +1,10 @@
 from abc import ABC, abstractmethod
+from datetime import date
 from typing import TypeVar, Optional, List, Any, Literal, Tuple, Dict, Union
 
 from pydantic import BaseModel, Field, model_validator
-from sqlalchemy import desc, asc, ColumnElement, Column, or_
-from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy import desc, asc, ColumnElement, or_
+from sqlalchemy.orm import DeclarativeBase, InstrumentedAttribute
 
 T = TypeVar("T", bound=DeclarativeBase)
 
@@ -11,8 +12,26 @@ T = TypeVar("T", bound=DeclarativeBase)
 class BaseFilter(BaseModel, ABC):
     """过滤器基类，提供排序和日期区间辅助方法"""
 
+    @property
+    @abstractmethod
+    def _filter_mappings(self) -> List[Tuple[str, InstrumentedAttribute]]:
+        """返回 [(字段名, 对应模型列)] 列表，用于等值筛选"""
+        ...
+
+    @property
+    def _date_ranges(self) -> List[Tuple[str, str, InstrumentedAttribute]]:
+        """返回 [(起始字段名, 结束字段名, 对应模型列)] 列表，用于日期区间筛选"""
+        return []
+
     @staticmethod
-    def _add_date_range(column, start, end, conditions: list) -> None:
+    @abstractmethod
+    def _model_class() -> type[T]:
+        """返回过滤器对应的 ORM 模型类"""
+        ...
+
+    @staticmethod
+    def _add_date_range(
+            column: InstrumentedAttribute, start: Optional[date], end: Optional[date], conditions: list) -> None:
         """
         添加日期区间条件到列表中
         子类可重写此方法，根据需要添加其他日期范围条件
@@ -30,64 +49,60 @@ class BaseFilter(BaseModel, ABC):
         elif end:
             conditions.append(column <= end)
 
-    @staticmethod
-    def _build_order_by(model: type[T], sort_by: Optional[str]) -> List[Any]:
-        """
-        根据 sort_by 字符串生成排序列表
-        子类可重写排序，默认调用 _build_order_by(self, model, self.sort_by)
-
-        Args:
-            model: 基金模型类
-            sort_by: 排序字符串，格式为 "+field_name" 或 "-field_name"
-
-        Returns:
-            SQLAlchemy order by 条件列表
-        """
-        if not sort_by:
-            return []
-
-        direction = desc if sort_by.startswith("-") else asc
-        field_name = sort_by.lstrip("-")
-
-        try:
-            col = model.__table__.c[field_name]
-        except KeyError:
-            raise ValueError(f"无效的排序字段: {field_name}")
-
-        return [direction(col)]
-
-    @abstractmethod
-    def to_where(self, model: type[T]) -> List[ColumnElement[bool]]:
-        """
-        转换为 SQLAlchemy where 条件列表
-        子类实现具体的条件生成
-
-        Args:
-            model: 基金模型类
-
-        Returns:
-            SQLAlchemy where 条件列表
-        """
-        ...
-
-    @abstractmethod
-    def to_order_by(self, model: type[T]) -> List[ColumnElement[Any]]:
+    def to_order_by(self) -> List[ColumnElement[Any]]:
         """
         转换为 SQLAlchemy order by 条件列表
         子类可重写排序，默认调用 _build_order_by(self, model, self.sort_by)
 
-        Args:
-            model: 基金模型类
-
         Returns:
             SQLAlchemy order by 条件列表
         """
-        ...
+        sort_by: Optional[str] = getattr(self, 'sort_by', None)
+        if sort_by is None:
+            return []
+        direction = desc if sort_by.startswith("-") else asc
+        field_name = sort_by.lstrip("-")
+        model = self._model_class()
+        try:
+            col = model.__table__.c[field_name]
+        except KeyError:
+            raise ValueError(f"无效的排序字段: {field_name}")
+        return [direction(col)]
+
+    def to_where(self) -> List[ColumnElement[bool]]:
+        """
+        转换为 SQLAlchemy where 条件列表
+        子类实现具体的条件生成
+
+        Returns:
+            SQLAlchemy where 条件列表
+        """
+        conditions: List[ColumnElement[bool]] = []
+        for field_name, col in self._filter_mappings:
+            value = getattr(self, field_name, None)
+            if value is not None:
+                conditions.append(col == value)
+        for start_field, end_field, col in self._date_ranges:
+            start = getattr(self, start_field, None)
+            end = getattr(self, end_field, None)
+            self._add_date_range(col, start, end, conditions)
+        return conditions
 
 
 class BaseSearchByKeyword(BaseModel, ABC):
     keyword: str = Field(..., description="搜索关键词")
     match_mode: Literal["exact", "fuzzy"] = Field("fuzzy", description="匹配模式")
+
+    def _get_search_params(self) -> tuple[str, bool]:
+        """
+        根据匹配模式返回处理后的表达式和匹配模式
+
+        Returns:
+            处理后的表达式和匹配模式
+        """
+        fuzzy = self.match_mode == "fuzzy"
+        expr = f"%{self.keyword}%" if fuzzy else self.keyword
+        return expr, fuzzy
 
     @abstractmethod
     def _or_conditions(self) -> List[ColumnElement[bool]]:
@@ -138,7 +153,7 @@ class BaseSearchByFields(BaseModel, ABC):
 
     @property
     @abstractmethod
-    def _column_mappings(self) -> List[Tuple[str, Column]]:
+    def _column_mappings(self) -> List[Tuple[str, InstrumentedAttribute]]:
         """返回 [(字段名, 模型列)] 列表，用于普通列搜索"""
         ...
 
@@ -150,7 +165,7 @@ class BaseSearchByFields(BaseModel, ABC):
         """
         return []
 
-    def _like_or_eq(self, column: Column, field: SearchField) -> Optional[ColumnElement[bool]]:
+    def _like_or_eq(self, column: InstrumentedAttribute, field: SearchField) -> Optional[ColumnElement[bool]]:
         """
         根据匹配模式返回 SQLAlchemy 条件表达式
 
