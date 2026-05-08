@@ -18,7 +18,7 @@ from typing import List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 from fund_nav_mcp.utils.enums import FundNavStatus, FundStatus, FundType, FundRegulatoryType, PeriodType, \
-    FundDataSource, FundManagementType
+    FundDataSource, FundManagementType, ManagementScaleRange
 
 
 class FundBase(BaseModel):
@@ -187,7 +187,7 @@ class FundManagerBase(BaseModel):
     office_address: Optional[str] = Field(None, max_length=200, description='办公地址')
     employee_count: Optional[int] = Field(None, description='全职员工人数')
     fund_industry_count: Optional[int] = Field(None, description='取得基金从业人数')
-    management_scale_range: Optional[str] = Field(None, max_length=50, description='管理规模区间')
+    management_scale_range: Optional[ManagementScaleRange] = Field(None, description='管理规模区间')
     actual_controller: Optional[str] = Field(None, max_length=100, description='实际控制人')
     is_member: bool = Field(False, description='是否为会员')
     legal_representative: Optional[str] = Field(None, max_length=50, description='法定代表人')
@@ -213,7 +213,7 @@ class FundManagerUpdate(BaseModel):
     office_address: Optional[str] = Field(None, max_length=200, description='办公地址')
     employee_count: Optional[int] = Field(None, description='全职员工人数')
     fund_industry_count: Optional[int] = Field(None, description='取得基金从业人数')
-    management_scale_range: Optional[str] = Field(None, max_length=50, description='管理规模区间')
+    management_scale_range: Optional[ManagementScaleRange] = Field(None, description='管理规模区间')
     actual_controller: Optional[str] = Field(None, max_length=100, description='实际控制人')
     is_member: Optional[bool] = Field(None, description='是否为会员')
     legal_representative: Optional[str] = Field(None, max_length=50, description='法定代表人')

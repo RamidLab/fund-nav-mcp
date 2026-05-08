@@ -1,4 +1,4 @@
-__all__ = ['FundFilter']
+__all__ = ['FundFilter', 'FundManagerFilter']
 
 from datetime import date
 from typing import Optional, Literal, List, Any
@@ -6,9 +6,9 @@ from typing import Optional, Literal, List, Any
 from pydantic import Field
 from sqlalchemy import ColumnElement
 
-from fund_nav_mcp.models.orm import Fund
+from fund_nav_mcp.models.orm import Fund, FundManager
 from fund_nav_mcp.models.pydantic import BaseFilter
-from fund_nav_mcp.utils.enums import FundType, FundRegulatoryType, FundStatus, FundManagementType
+from fund_nav_mcp.utils.enums import FundType, FundRegulatoryType, FundStatus, FundManagementType, ManagementScaleRange
 
 # 排序字段常量
 FUND_SORT_FIELDS = Literal[
@@ -69,4 +69,31 @@ class FundFilter(BaseFilter):
         return conditions
 
     def to_order_by(self, model: type[Fund]) -> List[ColumnElement[Any]]:
+        return self._build_order_by(model, self.sort_by)
+
+
+class FundManagerFilter(BaseFilter):
+    """基金管理人（机构）列表过滤器"""
+    management_scale_range: Optional[ManagementScaleRange] = Field(default=None, title="管理规模区间")
+    is_member: Optional[bool] = Field(default=None, title="是否为会员")
+    amac_registration_date_start: Optional[date] = Field(
+        default=None, title="登记时间起始", description="登记时间起始，含当日")
+    amac_registration_date_end: Optional[date] = Field(
+        default=None, title="登记时间截止", description="登记时间截止，含当日")
+    sort_by: Optional[MANAGER_SORT_FIELDS] = Field(
+        default=None, title="排序字段", description="排序字段，支持 '-field' 降序")
+
+    def to_where(self, model: type[FundManager]) -> List[ColumnElement[bool]]:
+        conditions: List[ColumnElement[bool]] = []
+        if self.management_scale_range is not None:
+            conditions.append(model.management_scale_range == self.management_scale_range)
+        if self.is_member is not None:
+            conditions.append(model.is_member == self.is_member)
+
+        self._add_date_range(model.amac_registration_date,
+                             self.amac_registration_date_start,
+                             self.amac_registration_date_end, conditions)
+        return conditions
+
+    def to_order_by(self, model: type[FundManager]) -> List[ColumnElement[Any]]:
         return self._build_order_by(model, self.sort_by)

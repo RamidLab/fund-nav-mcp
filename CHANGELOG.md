@@ -1,3 +1,17 @@
+## [0.6.0] - 2026-05-08
+
+### Added
+
+- **管理人筛选与搜索**：
+    - 新增 [`FundManagerFilter`](fund_nav_mcp/models/pydantic/filter.py) 筛选模型，支持规模区间、会员状态、登记日期区间及排序。
+    - 新增 [`FundManagerSearchByKeyword`](fund_nav_mcp/models/pydantic/search.py) 关键词搜索模型，一键搜索公司全称、简称、统一代码、登记编号等文本字段。
+    - 新增 [`FundManagerSearchByFields`](fund_nav_mcp/models/pydantic/search.py) 高级字段搜索模型，支持字段级精确/模糊控制和 AND/OR 切换。
+    - 新增 [`get_manager_list`](fund_nav_mcp/tools/fund_tools.py)、[`search_managers_by_keyword`](fund_nav_mcp/tools/fund_tools.py)、[`search_managers_by_fields`](fund_nav_mcp/tools/fund_tools.py) 三个工具，提供管理人维度的查询能力。
+
+### Changed
+
+- **模型字段优化**：将 `FundManager.management_scale_range` 字段类型从普通字符串改为 `ManagementScaleRange` 枚举，增强数据约束与语义。
+
 ## [0.5.1] - 2026-05-08
 
 ### Changed

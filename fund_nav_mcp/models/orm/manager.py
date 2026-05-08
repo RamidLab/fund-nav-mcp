@@ -9,6 +9,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
 from fund_nav_mcp.models.orm.base import Base
+from fund_nav_mcp.utils.enums import ManagementScaleRange
 
 if TYPE_CHECKING:
     from fund_nav_mcp.models.orm.fund import Fund
@@ -38,7 +39,7 @@ class FundManager(Base):
     # 人员与规模
     employee_count: Mapped[Optional[int]] = mapped_column(Integer, comment='全职员工人数')
     fund_industry_count: Mapped[Optional[int]] = mapped_column(Integer, comment='取得基金从业人数')
-    management_scale_range: Mapped[Optional[str]] = mapped_column(String(50), comment='管理规模区间')
+    management_scale_range: Mapped[Optional[ManagementScaleRange]] = mapped_column(String(50), comment='管理规模区间')
     # 实际控制人（可单独建表，简单起见存文本）
     actual_controller: Mapped[Optional[str]] = mapped_column(String(100), comment='实际控制人')
     # 状态

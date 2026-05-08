@@ -1,7 +1,6 @@
 __all__ = [
-    "NodeStatus", "FundStatus", "FundNavStatus", "FundType",
-    "FundRegulatoryType", "FundManagementType", "PeriodType", "FundDataSource",
-    "Errcode"
+    "NodeStatus", "FundStatus", "FundNavStatus", "FundType", "FundRegulatoryType", "FundManagementType",
+    "PeriodType", "FundDataSource", "ManagementScaleRange", "Errcode"
 ]
 
 from enum import Enum
@@ -241,6 +240,39 @@ class PeriodType(_BaseIntEnum):
     TenYear = 10, "十年"
     SinceInception = 11, "成立以来"
     Custom = 99, "自定义"
+
+    @classmethod
+    def _missing_(cls, value: str):
+        return cls.Custom
+
+    @classmethod
+    def from_name(cls, name: str) -> "PeriodType":
+        return getattr(cls, name, cls.Custom)
+
+    @classmethod
+    def from_label(cls, label: str) -> "PeriodType":
+        return next((status for status in cls if status.label == label), cls.Custom)
+
+
+class ManagementScaleRange(_BaseIntEnum):
+    Unknown = 0, "未知"
+    ZeroOne = 1, "0-1亿"
+    OneTen = 2, "1-10亿"
+    TenFiftyTen = 3, "10-50亿"
+    Fifty = 4, "50-100亿"
+    OneHundred = 5, "100亿以上"
+
+    @classmethod
+    def _missing_(cls, value: str):
+        return cls.Unknown
+
+    @classmethod
+    def from_name(cls, name: str) -> "ManagementScaleRange":
+        return getattr(cls, name, cls.Unknown)
+
+    @classmethod
+    def from_label(cls, label: str) -> "ManagementScaleRange":
+        return next((status for status in cls if status.label == label), cls.Unknown)
 
 
 class _ErrcodeEnum(int, Enum):
