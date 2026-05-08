@@ -3,14 +3,29 @@ __all__ = ['FundFilter']
 from datetime import date
 from typing import Optional, Literal, List, Any
 
-from pydantic import BaseModel, Field
-from sqlalchemy import desc, asc
+from pydantic import Field
+from sqlalchemy import ColumnElement
 
 from fund_nav_mcp.models.orm import Fund
+from fund_nav_mcp.models.pydantic import BaseFilter
 from fund_nav_mcp.utils.enums import FundType, FundRegulatoryType, FundStatus, FundManagementType
 
+# 排序字段常量
+FUND_SORT_FIELDS = Literal[
+    "fund_code", "fund_name", "fund_type", "fund_regulatory_type",
+    "fund_management_type", "status", "establishment_date", "registration_date", "updated_at"
+]
+MANAGER_SORT_FIELDS = Literal[
+    "company_name", "english_name", "unified_code", "amac_registration_number",
+    "amac_registration_date", "organization_type", "business_type",
+    "registered_capital", "paid_up_capital", "capital_ratio",
+    "office_address", "employee_count", "fund_industry_count",
+    "management_scale_range", "actual_controller", "is_member",
+    "legal_representative", "updated_at"
+]
 
-class FundFilter(BaseModel):
+
+class FundFilter(BaseFilter):
     """基金列表过滤器"""
     fund_type: Optional[FundType] = Field(
         default=None, title="基金投资类型", description="基金投资类型")
@@ -26,33 +41,13 @@ class FundFilter(BaseModel):
         default=None, title="备案日期起始", description="备案日期起始，含当日")
     registration_date_end: Optional[date] = Field(
         default=None, title="备案日期截止", description="备案日期截止，含当日")
-    sort_by: Optional[Literal[
-        "fund_code", "fund_name", "fund_type", "fund_regulatory_type", "fund_management_type",
-        "status", "establishment_date", "establishment_date", "update_time"
-    ]] = Field(
-        default=None, title="排序字段", description="排序字段，支持 '-field' 降序")
     status: Optional[FundStatus] = Field(
         default=None, title="基金状态")
+    sort_by: Optional[FUND_SORT_FIELDS] = Field(
+        default=None, title="排序字段", description="排序字段，支持 '-field' 降序")
 
-    @staticmethod
-    def _add_date_range(column, start, end, conditions):
-        if start and end:
-            conditions.append(column.between(start, end))
-        elif start:
-            conditions.append(column >= start)
-        elif end:
-            conditions.append(column <= end)
-
-    def to_where(self, model: type[Fund]) -> List[Any]:
-        """
-        转换为 SQLAlchemy where 条件列表
-
-        Args:
-            model: 基金模型类
-        Returns:
-            SQLAlchemy where 条件列表
-        """
-        conditions = []
+    def to_where(self, model: type[Fund]) -> List[ColumnElement[bool]]:
+        conditions: List[ColumnElement[bool]] = []
 
         # 枚举字段精确匹配
         for value, col in [
@@ -65,38 +60,13 @@ class FundFilter(BaseModel):
                 conditions.append(col == value)
 
         # 日期区间
-        self._add_date_range(
-            model.establishment_date,
-            self.establishment_date_start,
-            self.establishment_date_end,
-            conditions
-        )
-        self._add_date_range(
-            model.registration_date,
-            self.registration_date_start,
-            self.registration_date_end,
-            conditions
-        )
+        self._add_date_range(model.establishment_date,
+                             self.establishment_date_start,
+                             self.establishment_date_end, conditions)
+        self._add_date_range(model.registration_date,
+                             self.registration_date_start,
+                             self.registration_date_end, conditions)
         return conditions
 
-    def to_order_by(self, model: type[Fund]) -> List[Any]:
-        """
-        转换为 SQLAlchemy order by 条件列表
-
-        Args:
-            model: 基金模型类
-        Returns:
-            SQLAlchemy order by 条件列表
-        """
-        if not self.sort_by:
-            return []
-
-        direction = desc if self.sort_by.startswith('-') else asc
-        field_name = self.sort_by.lstrip('-')
-
-        try:
-            col = model.__table__.c[field_name]
-        except KeyError:
-            raise ValueError(f"无效的排序字段: {field_name}")
-
-        return [direction(col)]
+    def to_order_by(self, model: type[Fund]) -> List[ColumnElement[Any]]:
+        return self._build_order_by(model, self.sort_by)

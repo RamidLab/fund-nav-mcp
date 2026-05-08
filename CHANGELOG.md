@@ -1,3 +1,13 @@
+## [0.5.1] - 2026-05-08
+
+### Changed
+
+- **搜索模型重构**：
+    - 抽取 [`BaseSearchByKeyword`](fund_nav_mcp/models/pydantic/search.py) 和 [`BaseSearchByFields`](fund_nav_mcp/models/pydantic/search.py) 抽象基类，统一关键词搜索和字段搜索的核心逻辑。
+    - [`FundSearchByKeyword`](fund_nav_mcp/models/pydantic/search.py) 和 [`FundSearchByFields`](fund_nav_mcp/models/pydantic/search.py) 重构为继承基类，代码量大幅减少。
+    - [`FundManagerSearchByKeyword`](fund_nav_mcp/models/pydantic/search.py) 和 [`FundManagerSearchByFields`](fund_nav_mcp/models/pydantic/search.py) 基于基类实现，补全管理人维度的搜索功能。
+    - 所有子类仅需定义字段映射或 OR 条件列表，消除重复的 `_like_or_eq`、`_relation_cond` 和 `to_where` 实现。
+
 ## [0.5.0] - 2026-05-08
 
 ### Added
