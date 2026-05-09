@@ -3,7 +3,7 @@ from __future__ import annotations
 __all__ = ["create_filter_class", "create_search_class"]
 
 from datetime import date, datetime
-from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union, Set
 
 from pydantic import Field, create_model
 from sqlalchemy import Boolean, Date, DateTime, Integer, String, Text
@@ -11,6 +11,9 @@ from sqlalchemy.orm import DeclarativeBase, InstrumentedAttribute
 from sqlalchemy.sql.sqltypes import Enum as SQLEnum
 
 from fund_nav_mcp.models.pydantic import BaseFilter, BaseSearchByKeyword, SearchField, BaseSearchByFields
+from fund_nav_mcp.utils.log import get_logger
+
+logger = get_logger(__name__)
 
 
 def _safe_column_python_type(col: InstrumentedAttribute) -> type:
@@ -87,6 +90,81 @@ def _selected_model_columns(
     return selected
 
 
+def _check_field_conflicts(
+        *,
+        auto_names: Set[str],
+        column_mappings: Dict[str, Any],
+        extra_fields: Optional[Dict[str, Any]] = None,
+        date_range_generated: Optional[Set[str]] = None,
+        relation_field_names: Optional[Set[str]] = None,
+        context: str = "filter",
+        suppress_warnings: bool = False,
+) -> None:
+    """
+    统一冲突检测。
+
+    Args:
+        - auto_names: 自动选取的列名（来自模型）
+        - column_mappings: 手动覆盖的列名（搜索/过滤共用）
+        - extra_fields: 过滤器的额外字段名
+        - date_range_generated: 日期区间自动生成的起止字段名
+        - relation_field_names: 搜索类的关系字段名
+        - suppress_warnings: 是否静默处理报错的冲突
+    """
+    cm_names = set(column_mappings.keys()) if column_mappings else set()
+    ef_names = set(extra_fields.keys()) if extra_fields else set()
+    dr_names = date_range_generated or set()
+    rel_names = relation_field_names or set()
+
+    # extra_fields 覆盖任何已有字段
+    if extra_fields is not None:
+        ef_conflict = ef_names & (auto_names | dr_names | cm_names)
+        if ef_conflict:
+            raise ValueError(
+                f"[{context}] extra_fields 不能与已有字段冲突: {ef_conflict}。"
+                f"如需覆盖请使用 column_mappings。"
+            )
+
+    # 日期区间生成字段冲突
+    if dr_names:
+        dr_conflict = dr_names & (auto_names | cm_names | ef_names)
+        if dr_conflict:
+            raise ValueError(
+                f"[{context}] 日期区间生成字段与已有字段冲突: {dr_conflict}。"
+                f"请修改 date_range_mappings 起止字段名。"
+            )
+
+    # 关闭警告
+    if suppress_warnings:
+        return
+
+    # column_mappings 覆盖自动列
+    overlap_cm_auto = cm_names & auto_names
+    if overlap_cm_auto:
+        logger.warning(
+            f"[{context}] column_mappings 覆盖自动列: {overlap_cm_auto}，将以 column_mappings 类型为准。"
+            f"可通过 suppress_warnings=True 关闭此警告。",
+        )
+
+    # column_mappings 覆盖 extra_fields (仅过滤类)
+    if extra_fields is not None:
+        overlap_cm_ef = cm_names & ef_names
+        if overlap_cm_ef:
+            logger.warning(
+                f"[{context}] column_mappings 覆盖 extra_fields: {overlap_cm_ef}，以 column_mappings 为准。"
+                f"可通过 suppress_warnings=True 关闭此警告。",
+            )
+
+    # 搜索类：关系字段与文本列重名
+    if rel_names:
+        rel_overlap = rel_names & (auto_names | cm_names)
+        if rel_overlap:
+            logger.warning(
+                f"[{context}] 关系映射字段与已有搜索字段重名: {rel_overlap}，"
+                f"该字段将作为附加条件参与搜索。可通过 suppress_warnings=True 关闭此警告。",
+            )
+
+
 def _bind_property_value(cls: type, name: str, value: Any) -> None:
     """
     给类绑定一个只读 property，避免可变默认值问题。
@@ -108,7 +186,7 @@ def create_filter_class(
         column_mappings: Optional[Dict[str, Union[InstrumentedAttribute, Tuple[InstrumentedAttribute, type]]]] = None,
         date_range_mappings: Optional[Dict[str, Tuple[str, str]]] = None,
         extra_fields: Optional[Dict[str, Tuple[type, Any]]] = None,
-        class_name: Optional[str] = None,
+        suppress_warnings: bool = False,
 ) -> Type[BaseFilter]:
     """
     动态创建 Filter 子类（零类型警告、自动推断字段、全字段可选）。
@@ -117,17 +195,32 @@ def create_filter_class(
         model: ORM 模型类
         include: 白名单，只包含这些列（优先级高于exclude）
         exclude: 黑名单，排除这些列（include 为 None 时生效）
-        column_mappings: 额外/覆盖的列映射，可指定类型
+        column_mappings: 非过滤元字段/覆盖元字段的列映射，可指定类型
         date_range_mappings: 日期区间映射
-        extra_fields: 额外字段，如 sort_by
-        class_name: 类名，默认 {ModelName}Filter
+        extra_fields: 非过滤元字段，如 sort_by
+        suppress_warnings: 是否静默处理报错的冲突
     """
-    class_name = class_name or f"{model.__name__}Filter"
+    class_name = f"{model.__name__}Filter"
     date_range_mappings = date_range_mappings or {}
     extra_fields = extra_fields or {}
     column_mappings = column_mappings or {}
 
     selected_columns = _selected_model_columns(model, include=include, exclude=exclude)
+
+    # 自动选取的列名（来自模型）
+    auto_names = set(selected_columns.keys())
+
+    # 生成日期区间字段名
+    dr_generated = {v for pair in date_range_mappings.values() for v in pair}
+
+    _check_field_conflicts(
+        auto_names=auto_names,
+        column_mappings=column_mappings,
+        extra_fields=extra_fields,
+        date_range_generated=dr_generated,
+        context="Filter",
+        suppress_warnings=suppress_warnings,
+    )
 
     # 合并 column_mappings 中的字段（类型优先）
     for field_name, entry in column_mappings.items():
@@ -187,8 +280,9 @@ def create_search_class(
         model: Type[DeclarativeBase],
         include: Optional[List[str]] = None,
         exclude: Optional[List[str]] = None,
-        column_overrides: Optional[Dict[str, Tuple[InstrumentedAttribute, type]]] = None,
+        column_mappings: Optional[Dict[str, Tuple[InstrumentedAttribute, type]]] = None,
         relation_mappings: Optional[Dict[str, Tuple[str, Type[DeclarativeBase], str]]] = None,
+        suppress_warnings: bool = False,
 ) -> Tuple[Type["BaseSearchByKeyword"], Type["BaseSearchByFields"]]:
     """
     根据 ORM 模型自动生成关键词搜索和字段搜索两个 Pydantic 类。
@@ -197,11 +291,12 @@ def create_search_class(
         model: ORM 模型类
         include: 参与搜索的文本列白名单（若为 None 则自动包含所有 String/Text 列）
         exclude: 黑名单（include 为 None 时生效）
-        column_overrides: 覆盖列类型，例如 {'fund_code': (Fund.fund_code, str)}
+        column_mappings: 覆盖列映射表，例如 {'fund_code': (Fund.fund_code, str)}
         relation_mappings: 跨表关系搜索，例如
             {'manager_name': ('manager', FundManager, 'company_name')}
+        suppress_warnings: 是否静默处理报错的冲突
     """
-    column_overrides = column_overrides or {}
+    column_mappings = column_mappings or {}
 
     # 选择文本列
     search_columns = _selected_model_columns(
@@ -211,8 +306,18 @@ def create_search_class(
         text_only=True,
     )
 
+    auto_names = set(search_columns.keys())
+
+    _check_field_conflicts(
+        auto_names=auto_names,
+        column_mappings=column_mappings,
+        relation_field_names=set(relation_mappings.keys()) if relation_mappings else None,
+        context="Search",
+        suppress_warnings=suppress_warnings,
+    )
+
     # 覆盖列
-    for name, (col, _) in column_overrides.items():
+    for name, (col, _) in column_mappings.items():
         search_columns[name] = col
 
     # 生成关键词搜索类
