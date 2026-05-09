@@ -4,7 +4,7 @@ __all__ = [
 ]
 
 from enum import Enum
-from typing import Any
+from typing import Any, Union, Optional
 
 from prefab_ui.components import Badge
 from starlette.status import *
@@ -19,6 +19,21 @@ class _BaseIntEnum(int, Enum):
 
     def __str__(self):
         return f"{self.value}"
+
+    @classmethod
+    def _resolver(cls, value: Union[int, str], default: Optional["_BaseIntEnum"] = None) -> Optional["_BaseIntEnum"]:
+        if isinstance(value, int):
+            return cls(value)
+        if isinstance(value, str):
+            # 尝试通过 label 匹配
+            label_map = {m.label: m for m in cls if hasattr(m, 'label')}
+            if value in label_map:
+                return label_map[value]
+            # 尝试不区分大小写的名称匹配
+            name_map = {m.name.lower(): m for m in cls}
+            if value.lower() in name_map:
+                return name_map[value.lower()]
+        return default
 
 
 class _NodeStatusEnum(str, Enum):
@@ -86,7 +101,7 @@ class FundStatus(_BaseIntEnum):
 
     @classmethod
     def _missing_(cls, value: int):
-        return cls.Unknown
+        return cls._resolver(value, default=cls.Unknown)
 
     @classmethod
     def from_name(cls, name: str) -> "FundStatus":
@@ -108,7 +123,7 @@ class FundNavStatus(_BaseIntEnum):
 
     @classmethod
     def _missing_(cls, value: str):
-        return cls.Unknown
+        return cls._resolver(value, default=cls.Unknown)
 
     @classmethod
     def from_name(cls, name: str) -> "FundNavStatus":
@@ -132,7 +147,7 @@ class FundType(_BaseIntEnum):
 
     @classmethod
     def _missing_(cls, value: str):
-        return cls.Other
+        return cls._resolver(value, default=cls.Other)
 
     @classmethod
     def from_name(cls, name: str) -> "FundType":
@@ -161,7 +176,7 @@ class FundRegulatoryType(_BaseIntEnum):
 
     @classmethod
     def _missing_(cls, value: str):
-        return cls.Unknown
+        return cls._resolver(value, default=cls.Unknown)
 
     @classmethod
     def from_name(cls, name: str) -> "FundRegulatoryType":
@@ -180,7 +195,7 @@ class FundManagementType(_BaseIntEnum):
 
     @classmethod
     def _missing_(cls, value: str):
-        return cls.Unknown
+        return cls._resolver(value, default=cls.Unknown)
 
     @classmethod
     def from_name(cls, name: str) -> "FundManagementType":
@@ -216,7 +231,7 @@ class FundDataSource(_BaseIntEnum):
 
     @classmethod
     def _missing_(cls, value: str):
-        return cls.Other
+        return cls._resolver(value, default=cls.Other)
 
     @classmethod
     def from_name(cls, name: str) -> "FundDataSource":
@@ -243,7 +258,7 @@ class PeriodType(_BaseIntEnum):
 
     @classmethod
     def _missing_(cls, value: str):
-        return cls.Custom
+        return cls._resolver(value, default=cls.Custom)
 
     @classmethod
     def from_name(cls, name: str) -> "PeriodType":
@@ -264,7 +279,7 @@ class ManagementScaleRange(_BaseIntEnum):
 
     @classmethod
     def _missing_(cls, value: str):
-        return cls.Unknown
+        return cls._resolver(value, default=cls.Unknown)
 
     @classmethod
     def from_name(cls, name: str) -> "ManagementScaleRange":
