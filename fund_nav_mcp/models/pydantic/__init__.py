@@ -57,11 +57,13 @@ class BaseFilter(BaseModel, ABC):
         Returns:
             SQLAlchemy order by 条件列表
         """
-        sort_by: Optional[str] = getattr(self, 'sort_by', None)
-        if sort_by is None:
+        field_name: Optional[str] = getattr(self, 'sort_by', None)
+        order = getattr(self, 'sort_order', "asc")
+        if field_name is None:
             return []
-        direction = desc if sort_by.startswith("-") else asc
-        field_name = sort_by.lstrip("-")
+        if order not in ["asc", "desc"]:
+            raise ValueError(f"无效的排序方向: {order}")
+        direction = desc if order == "desc" else asc
         model = self._model_class()
         try:
             col = model.__table__.c[field_name]
