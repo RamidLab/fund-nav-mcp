@@ -7,7 +7,7 @@ __all__ = [
 from typing import Optional, Type, Union
 
 from fastmcp.tools import tool
-from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.orm import DeclarativeBase, InstrumentedAttribute
 
 from fund_nav_mcp.db.core import get_manager
 from fund_nav_mcp.models.common import UtilResponse
@@ -36,6 +36,16 @@ async def _execute_paginated_query(
         if isinstance(filter_or_search, BaseFilter):
             where = filter_or_search.to_where()
             order_by = filter_or_search.to_order_by()
+
+            for field_name in dir(filter_or_search):
+                if field_name.endswith("_list"):
+                    column_name = field_name[:-5]
+                    col: InstrumentedAttribute | None = getattr(model, column_name, None)
+                    if col is not None:
+                        values = getattr(filter_or_search, field_name, None)
+                        if isinstance(values, list) and len(values) > 0:
+                            where = (where or []) + [col.in_(values)]
+
         elif isinstance(filter_or_search, (BaseSearchByKeyword, BaseSearchByFields)):
             where = filter_or_search.to_where()
         else:
