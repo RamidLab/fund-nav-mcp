@@ -1,3 +1,48 @@
+## [0.8.2] 2026-05-10
+
+### Added
+
+- **多操作符过滤支持**：新增 [`FilterField`](fund_nav_mcp/models/pydantic/__init__.py) 类型及 `ScalarValue`、`FilterValue` 联合类型，支持 `eq`/`ne`/`gt`/`gte`/`lt`/`lte`/`in`/`like`/`between` 九种比较操作符，取代此前单一的等值过滤，过滤能力大幅增强。
+- **跨表关联列过滤**：`create_filter_class` 的 `column_mappings` 新增三元组形式 `(relation_attr, target_column, python_type)`，自动生成基于 `has()`/`any()` 的跨表过滤条件（例如通过基金查询管理人或分类名称）。
+- **枚举类型推断增强**：`_safe_column_python_type` 引入 `_extract_py_type_from_annotation`，优先从 `Mapped[]` 注解中提取真实 Python 枚举类型，使生成的筛选字段直接使用枚举类而非 `int`。
+- **`exclude_comparable_fields` 参数**：`create_filter_class` 新增该参数，允许指定部分字段不转换为 `FilterField` 而保留原始类型等值比较，满足特殊场景需求。
+
+### Changed
+
+- **筛选基类重构**：`BaseFilter` 移除 `_date_ranges` 与 `_add_date_range`，统一使用静态方法 `_build_condition` 根据 `FilterField` 生成 SQL 条件（日期区间改用 `between` 操作符实现），`to_where` 逻辑大幅简化。
+- **搜索字段统一命名**：`SearchField.mode` 重命名为 `condition`，与 `FilterField` 命名风格一致；`BaseSearchByFields._like_or_eq`、`_relation_cond` 及所有生成方法同步使用 `field.condition`。
+- **工厂函数接口升级**：
+  - `create_filter_class`：移除 `date_range_mappings` 参数，日期/数值区间改为由 `column_mappings` 配置；新增 `exclude_comparable_fields`；`column_mappings` 支持关联列三元组。
+  - `create_search_class`：统一使用 `model=` 关键字参数，移除部分冗余校验。
+- **所有 Filter/Search 类重构**：`filter_classes.py` 与 `search_classes.py` 中的类全部改用新的工厂参数生成，增加 `sort_order` 字段，并对 `Fund`、`FundManager`、`FundManagerPerson` 的关系映射进行优化（如补充 `category_name` 搜索、调整经理名称映射）。
+- **ORM 模型字段注释与时间戳完善**：
+  - `FundCategoryMapping` 新增 `updated_at` 字段。
+  - `FundNav`、`FundReturn`、`FundHolding` 的外键字段注释细化（如“基金产品ID，关联fund表的ID”），移除部分不必要的 `nullable=False` 约束。
+  - 所有时间戳字段统一使用 `server_default=text("CURRENT_TIMESTAMP")`。
+
+### Fixed
+
+- **枚举解析安全性**：`_BaseIntEnum._resolver` 由直接构造 `cls(value)` 改为 `_value2member_map_.get(value, default)`，避免传入无效值时抛出异常。
+- **字段搜索条件回退**：修复 `_relation_cond` 中 `field.mode` 引用错误（已改为 `field.condition`），确保字段级匹配模式可正确回退到全局 `match_mode`。
+
+### Removed
+
+- 移除 `BaseFilter._date_ranges` 属性及其配套的 `_add_date_range` 静态方法。
+- 移除 `create_filter_class` 的 `date_range_mappings` 参数及相关的冲突检测逻辑。
+- 删除旧版 Filter/Search 类中手动绑定的部分方法，全部逻辑已由工厂函数自动注入。
+
+## [0.8.1] 2026-05-09
+
+### Added
+
+- **显式升降序选择**：在 [`BaseFilter`](fund_nav_mcp/models/pydantic/filter.py) 中新增 `sort_by` 字段，支持显式指定排序字段和方向。
+- **枚举解析增强**：在 [`_BaseIntEnum`](fund_nav_mcp/utils/enums.py) 基类中新增 `_resolver` 方法，支持通过整数值、`label` 或大小写不敏感的名称查找枚举成员。`FundStatus` 等枚举的 `_missing_` 方法已采用该解析器，提高对字符串输入的兼容性。
+- **列表筛选支持**：[`_execute_paginated_query`](fund_nav_mcp/tools/fund_tools.py) 新增对 Filter 中 `*_list` 后缀字段的自动处理，字段值若为列表则生成 `IN` 查询条件，方便批量筛选。
+- **字段冲突检测**：新增 [`_check_field_conflicts`](fund_nav_mcp/models/pydantic/builder.py)，自动检测 Filter/Search 生成时的字段名冲突，并支持 `suppress_warnings` 参数控制警告输出。
+
+### Changed
+- **工厂重命名与增强**：`create_search_classes` 更名为 `create_search_class`（返回值不变）；`create_filter_class` 和 `create_search_class` 均增加 `suppress_warnings` 参数，方便调用方按需静默冲突警告。
+
 ## [0.8.0] 2026-05-09
 
 ### Added

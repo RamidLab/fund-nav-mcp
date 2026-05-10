@@ -9,7 +9,6 @@ from sqlalchemy import (
     ForeignKeyConstraint, Index, text
 )
 from sqlalchemy.orm import relationship, Mapped, mapped_column
-from sqlalchemy.sql import func
 
 from fund_nav_mcp.models.orm.base import Base
 
@@ -31,11 +30,13 @@ class FundCategory(Base):
     updated_at: Mapped[DateTime] = mapped_column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
 
     # 自引用关系
-    parent: Mapped[Optional["FundCategory"]] = relationship("FundCategory", remote_side='FundCategory.id',
-                                                            back_populates="children")
-    children: Mapped[list["FundCategory"]] = relationship("FundCategory", back_populates="parent")
+    parent: Mapped[Optional["FundCategory"]] = relationship(
+        "FundCategory", remote_side='FundCategory.id', back_populates="children")
+    children: Mapped[list["FundCategory"]] = relationship(
+        "FundCategory", back_populates="parent")
     # 关系
-    funds: Mapped[list["Fund"]] = relationship("Fund", secondary="fund_category_mapping", back_populates="categories")
+    funds: Mapped[list["Fund"]] = relationship(
+        "Fund", secondary="fund_category_mapping", back_populates="categories")
 
     # 列定义
     __table_args__ = (
@@ -52,7 +53,8 @@ class FundCategoryMapping(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     fund_id: Mapped[int] = mapped_column(Integer, comment='基金ID')
     category_id: Mapped[int] = mapped_column(Integer, comment='分类ID')
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
 
     # 唯一约束
     __table_args__ = (

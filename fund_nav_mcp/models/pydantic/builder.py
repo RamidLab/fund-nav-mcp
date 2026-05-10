@@ -2,18 +2,51 @@ from __future__ import annotations
 
 __all__ = ["create_filter_class", "create_search_class"]
 
+import typing
 from datetime import date, datetime
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union, Set
 
 from pydantic import Field, create_model
-from sqlalchemy import Boolean, Date, DateTime, Integer, String, Text
-from sqlalchemy.orm import DeclarativeBase, InstrumentedAttribute
+from sqlalchemy import Boolean, Date, DateTime, Integer, String, Text, ColumnElement
+from sqlalchemy.orm import DeclarativeBase, InstrumentedAttribute, Mapped
 from sqlalchemy.sql.sqltypes import Enum as SQLEnum
 
-from fund_nav_mcp.models.pydantic import BaseFilter, BaseSearchByKeyword, SearchField, BaseSearchByFields
+from fund_nav_mcp.models.pydantic import BaseFilter, BaseSearchByKeyword, SearchField, BaseSearchByFields, FilterField
 from fund_nav_mcp.utils.log import get_logger
 
 logger = get_logger(__name__)
+
+
+def _extract_py_type_from_annotation(raw_type, col_type=None):
+    """
+    解析注解并可选地校验枚举兼容性。
+    如果 col_type 不为 None，且提取出的类型是枚举，则做兼容性检查，
+    不兼容时返回常规 Python 类型。
+    """
+    origin = typing.get_origin(raw_type)
+    args = typing.get_args(raw_type)
+
+    # 剥离 Mapped / Optional
+    if origin is Mapped and args:
+        return _extract_py_type_from_annotation(args[0], col_type)
+    if origin is Union:
+        non_none = [a for a in args if a is not type(None)]
+        if len(non_none) == 1:
+            return _extract_py_type_from_annotation(non_none[0], col_type)
+        return None
+
+    if not isinstance(raw_type, type):
+        return None
+
+    if col_type is not None and issubclass(raw_type, SQLEnum):
+        if issubclass(raw_type, int) and isinstance(col_type, Integer):
+            return raw_type
+        if issubclass(raw_type, str) and isinstance(col_type, (String, Text)):
+            return raw_type
+        # 不兼容枚举 -> 不返回枚举，由外层继续走常规映射
+        return None
+
+    return raw_type
 
 
 def _safe_column_python_type(col: InstrumentedAttribute) -> type:
@@ -24,32 +57,49 @@ def _safe_column_python_type(col: InstrumentedAttribute) -> type:
     - 失败返回 Any
     """
     col_type = getattr(col, "type", None)
-    if col_type is None:
-        return Any
+    if col_type is not None:
+        try:
+            if isinstance(col_type, SQLEnum):
+                enum_class = getattr(col_type, "enum_class", None)
+                if isinstance(enum_class, type):
+                    return enum_class
+        except (AttributeError, NotImplementedError):
+            pass
 
+    # 尝试从模型类的类型注解中提取真实 Python 类型
+    # noinspection PyBroadException
     try:
-        if isinstance(col_type, SQLEnum):
-            enum_class = getattr(col_type, "enum_class", None)
-            if isinstance(enum_class, type):
-                return enum_class
-
-        type_map = {
-            Integer: int,
-            String: str,
-            Text: str,
-            Date: date,
-            DateTime: datetime,
-            Boolean: bool,
-        }
-        for sa_type, py_type in type_map.items():
-            if isinstance(col_type, sa_type):
-                return py_type
-
-        py_type = getattr(col_type, "python_type", None)
-        if isinstance(py_type, type):
-            return py_type
-    except (AttributeError, NotImplementedError):
+        model_cls = col.class_  # 获取声明该属性的模型类
+        _annotations = typing.get_type_hints(model_cls, include_extras=True)
+        raw_type = _annotations.get(col.key, None)
+        if raw_type is not None and isinstance(raw_type, type):
+            extracted = _extract_py_type_from_annotation(raw_type)
+            if extracted is not None:
+                # 仅当提取的类型是 Integer/BigInteger/SmallInteger/String/Text + Enum 子类，且与列存储兼容时才返回
+                if extracted is not None and issubclass(extracted, SQLEnum):
+                    return extracted
+    except Exception:
         pass
+
+    if col_type is not None:
+        try:
+            type_map = {
+                Integer: int,
+                String: str,
+                Text: str,
+                Date: date,
+                DateTime: datetime,
+                Boolean: bool,
+            }
+            for sa_type, py_type in type_map.items():
+                if isinstance(col_type, sa_type):
+                    return py_type
+
+            py_type = getattr(col_type, "python_type", None)
+            if isinstance(py_type, type):
+                return py_type
+        except (AttributeError, NotImplementedError):
+            pass
 
     return Any
 
@@ -95,9 +145,8 @@ def _check_field_conflicts(
         auto_names: Set[str],
         column_mappings: Dict[str, Any],
         extra_fields: Optional[Dict[str, Any]] = None,
-        date_range_generated: Optional[Set[str]] = None,
         relation_field_names: Optional[Set[str]] = None,
-        context: str = "filter",
+        context: str = "Filter",
         suppress_warnings: bool = False,
 ) -> None:
     """
@@ -113,25 +162,15 @@ def _check_field_conflicts(
     """
     cm_names = set(column_mappings.keys()) if column_mappings else set()
     ef_names = set(extra_fields.keys()) if extra_fields else set()
-    dr_names = date_range_generated or set()
     rel_names = relation_field_names or set()
 
     # extra_fields 覆盖任何已有字段
     if extra_fields is not None:
-        ef_conflict = ef_names & (auto_names | dr_names | cm_names)
+        ef_conflict = ef_names & (auto_names | cm_names)
         if ef_conflict:
             raise ValueError(
                 f"[{context}] extra_fields 不能与已有字段冲突: {ef_conflict}。"
                 f"如需覆盖请使用 column_mappings。"
-            )
-
-    # 日期区间生成字段冲突
-    if dr_names:
-        dr_conflict = dr_names & (auto_names | cm_names | ef_names)
-        if dr_conflict:
-            raise ValueError(
-                f"[{context}] 日期区间生成字段与已有字段冲突: {dr_conflict}。"
-                f"请修改 date_range_mappings 起止字段名。"
             )
 
     # 关闭警告
@@ -183,9 +222,10 @@ def create_filter_class(
         model: Type[DeclarativeBase],
         include: Optional[List[str]] = None,
         exclude: Optional[List[str]] = None,
-        column_mappings: Optional[Dict[str, Union[InstrumentedAttribute, Tuple[InstrumentedAttribute, type]]]] = None,
-        date_range_mappings: Optional[Dict[str, Tuple[str, str]]] = None,
+        column_mappings: Optional[Dict[str, Union[InstrumentedAttribute, Tuple[InstrumentedAttribute, type], Tuple[
+            InstrumentedAttribute, InstrumentedAttribute, type]]]] = None,
         extra_fields: Optional[Dict[str, Tuple[type, Any]]] = None,
+        exclude_comparable_fields: Optional[List[str]] = None,
         suppress_warnings: bool = False,
 ) -> Type[BaseFilter]:
     """
@@ -195,68 +235,85 @@ def create_filter_class(
         model: ORM 模型类
         include: 白名单，只包含这些列（优先级高于exclude）
         exclude: 黑名单，排除这些列（include 为 None 时生效）
-        column_mappings: 非过滤元字段/覆盖元字段的列映射，可指定类型
-        date_range_mappings: 日期区间映射
-        extra_fields: 非过滤元字段，如 sort_by
+        column_mappings:
+            本表/关联列的过滤映射。可选形式：
+            - 本表列：InstrumentedAttribute 或 (InstrumentedAttribute, python_type)
+            - 关联列：(relationship_attr, target_column, python_type)  三元组，自动生成 has()/any() 条件
+            例: {"code": Fund.fund_code} 或 {"mgr": (FundManager.name, str)}
+            或 {"manager_name": (Fund.manager, FundManager.company_name, Optional[str])}
+        extra_fields: 附加的非列业务字段，如排序控制等（不参与自动条件生成）
+        exclude_comparable_fields: 需要保持普通类型（非 FilterField）的字段名列表
         suppress_warnings: 是否静默处理报错的冲突
     """
     class_name = f"{model.__name__}Filter"
-    date_range_mappings = date_range_mappings or {}
     extra_fields = extra_fields or {}
     column_mappings = column_mappings or {}
+    exclude_comparable = set(exclude_comparable_fields) if exclude_comparable_fields else set()
 
     selected_columns = _selected_model_columns(model, include=include, exclude=exclude)
 
     # 自动选取的列名（来自模型）
     auto_names = set(selected_columns.keys())
 
-    # 生成日期区间字段名
-    dr_generated = {v for pair in date_range_mappings.values() for v in pair}
-
     _check_field_conflicts(
         auto_names=auto_names,
         column_mappings=column_mappings,
         extra_fields=extra_fields,
-        date_range_generated=dr_generated,
         context="Filter",
         suppress_warnings=suppress_warnings,
     )
 
-    # 合并 column_mappings 中的字段（类型优先）
-    for field_name, entry in column_mappings.items():
-        if isinstance(entry, tuple):
-            col, _ = entry
+    # 解析 column_mappings，区分普通列映射和关系列映射
+    relation_filter_mappings: Dict[str, Tuple[InstrumentedAttribute, InstrumentedAttribute, type]] = {}
+    for field_name, entry in list(column_mappings.items()):
+        if isinstance(entry, tuple) and len(entry) == 3:
+            # 三元组：关系映射
+            rel_attr, target_col, py_type = entry
+            relation_filter_mappings[field_name] = (rel_attr, target_col, py_type)
+            # 如果此字段名与自动列重名，覆盖自动列（移除自动列）
+            if field_name in selected_columns:
+                del selected_columns[field_name]
         else:
-            col = entry
-        selected_columns[field_name] = col
+            # 普通列映射
+            if isinstance(entry, tuple):
+                col, _ = entry
+            else:
+                col = entry
+            selected_columns[field_name] = col
 
     # 构造字段定义
     fields_def: Dict[str, Tuple[type, Any]] = {}
     filter_mappings: List[Tuple[str, InstrumentedAttribute]] = []
 
     for field_name, col in selected_columns.items():
-        if field_name in column_mappings:
-            entry = column_mappings[field_name]
-            if isinstance(entry, tuple):
-                _, py_type = entry
+        if field_name in exclude_comparable:
+            if field_name in column_mappings:
+                entry = column_mappings[field_name]
+                if isinstance(entry, tuple):
+                    _, py_type = entry
+                else:
+                    py_type = _safe_column_python_type(col)
+                    py_type = py_type | None
             else:
                 py_type = _safe_column_python_type(col)
                 py_type = py_type | None
+
+            if not isinstance(py_type, type):
+                py_type = Any
+
+            comment = getattr(col, 'comment', '') or ''
+            fields_def[field_name] = (py_type, Field(default=None, description=comment))
         else:
-            py_type = _safe_column_python_type(col)
-            py_type = py_type | None
+            fields_def[field_name] = (Optional[FilterField], Field(default=None))
 
-        if not isinstance(py_type, type):
-            py_type = Any
-
-        comment = getattr(col, 'comment', '') or ''
-        fields_def[field_name] = (py_type, Field(default=None, description=comment))
         filter_mappings.append((field_name, col))
 
-    # 日期区间字段
-    for col_name, (start_field, end_field) in date_range_mappings.items():
-        fields_def[start_field] = (Optional[date], Field(default=None, description=f"{col_name}起始"))
-        fields_def[end_field] = (Optional[date], Field(default=None, description=f"{col_name}截止"))
+    # 为关系映射字段创建字段定义
+    for field_name, (rel_attr, target_col, py_type) in relation_filter_mappings.items():
+        if field_name in exclude_comparable:
+            fields_def[field_name] = (py_type, Field(default=None))
+        else:
+            fields_def[field_name] = (Optional[FilterField], Field(default=None))
 
     # 额外字段
     fields_def.update(extra_fields)
@@ -266,10 +323,27 @@ def create_filter_class(
 
     # 绑定只读属性，避免 mutable default warning
     _bind_property_value(new_filter, "_filter_mappings", tuple(filter_mappings))
-    _bind_property_value(new_filter, "_date_ranges", tuple(
-        (start_field, end_field, getattr(model, col_name))
-        for col_name, (start_field, end_field) in date_range_mappings.items()))
+    _bind_property_value(new_filter, "_relation_filter_mappings", tuple(relation_filter_mappings.items()))
     new_filter._model_class = staticmethod(lambda: model)
+
+    def to_where(self) -> List[ColumnElement[bool]]:
+        conditions = BaseFilter.to_where(self)
+        for _field_name, (_rel_attr, _target_col, _py_type) in self._relation_filter_mappings:
+            value = getattr(self, _field_name, None)
+            if value is None:
+                continue
+            if isinstance(value, FilterField):
+                cond = self._build_condition(_target_col, value)
+            else:
+                cond = _target_col == value
+            if cond is not None:
+                if _rel_attr.property.uselist:
+                    conditions.append(_rel_attr.any(cond))
+                else:
+                    conditions.append(_rel_attr.has(cond))
+        return conditions
+
+    setattr(new_filter, "to_where", to_where)
 
     _drop_abstract_methods(new_filter, "_filter_mappings", "_model_class")
 
@@ -388,8 +462,8 @@ def create_search_class(
             return None
         rel = getattr(self._model_class(), relation_attr)
         target_col = getattr(target_model, target_col_name)
-        mode = field.mode or self.match_mode
-        fuzzy = (mode == "fuzzy")
+        condition = field.condition or self.match_mode
+        fuzzy = (condition == "fuzzy")
         if fuzzy:
             if rel.property.uselist:
                 return rel.any(target_col.ilike(f"%{field.value}%"))

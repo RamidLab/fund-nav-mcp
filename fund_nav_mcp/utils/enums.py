@@ -4,7 +4,7 @@ __all__ = [
 ]
 
 from enum import Enum
-from typing import Any, Union, Optional
+from typing import Any, Union, Optional, Self
 
 from prefab_ui.components import Badge
 from starlette.status import *
@@ -21,12 +21,12 @@ class _BaseIntEnum(int, Enum):
         return f"{self.value}"
 
     @classmethod
-    def _resolver(cls, value: Union[int, str], default: Optional["_BaseIntEnum"] = None) -> Optional["_BaseIntEnum"]:
+    def _resolver(cls, value: Union[int, str], default: Optional["_BaseIntEnum"] = None) -> Union[Self, Enum, None]:
         if isinstance(value, int):
-            return cls(value)
+            return cls._value2member_map_.get(value, default)
         if isinstance(value, str):
             # 尝试通过 label 匹配
-            label_map = {m.label: m for m in cls if hasattr(m, 'label')}
+            label_map = {m.label: m for m in cls}
             if value in label_map:
                 return label_map[value]
             # 尝试不区分大小写的名称匹配

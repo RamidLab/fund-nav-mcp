@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from datetime import date
+from datetime import date, datetime
 from typing import TypeVar, Optional, List, Any, Literal, Tuple, Dict, Union
 
 from pydantic import BaseModel, Field, model_validator
@@ -7,6 +7,25 @@ from sqlalchemy import desc, asc, ColumnElement, or_
 from sqlalchemy.orm import DeclarativeBase, InstrumentedAttribute
 
 T = TypeVar("T", bound=DeclarativeBase)
+
+ScalarValue = Union[int, float, str, bool, date, datetime]
+FilterValue = Union[
+    ScalarValue,
+    List[ScalarValue],  # in 操作符的值
+    Tuple[Optional[ScalarValue], Optional[ScalarValue]],  # between 操作符
+]
+
+
+class FilterField(BaseModel):
+    value: Optional[FilterValue] = Field(default=None, title="搜索值")
+    condition: Literal["eq", "ne", "gt", "gte", "lt", "lte", "in", "like", "between"] = "eq"
+
+    @model_validator(mode="before")
+    @classmethod
+    def coerce_plain_value(cls, data):
+        if not isinstance(data, dict):
+            return {"value": data, "condition": "eq"}
+        return data
 
 
 class BaseFilter(BaseModel, ABC):
@@ -18,11 +37,6 @@ class BaseFilter(BaseModel, ABC):
         """返回 [(字段名, 对应模型列)] 列表，用于等值筛选"""
         ...
 
-    @property
-    def _date_ranges(self) -> List[Tuple[str, str, InstrumentedAttribute]]:
-        """返回 [(起始字段名, 结束字段名, 对应模型列)] 列表，用于日期区间筛选"""
-        return []
-
     @staticmethod
     @abstractmethod
     def _model_class() -> type[T]:
@@ -30,24 +44,46 @@ class BaseFilter(BaseModel, ABC):
         ...
 
     @staticmethod
-    def _add_date_range(
-            column: InstrumentedAttribute, start: Optional[date], end: Optional[date], conditions: list) -> None:
-        """
-        添加日期区间条件到列表中
-        子类可重写此方法，根据需要添加其他日期范围条件
-
-        Args:
-            column: 日期列对象
-            start: 开始日期
-            end: 结束日期
-            conditions: 存储条件的列表
-        """
-        if start and end:
-            conditions.append(column.between(start, end))
-        elif start:
-            conditions.append(column >= start)
-        elif end:
-            conditions.append(column <= end)
+    def _build_condition(col: InstrumentedAttribute, value: Optional[FilterField]) -> Optional[ColumnElement[bool]]:
+        """统一构造 SQL 条件，支持普通值和 FilterField"""
+        if value is None:
+            return None
+        if not isinstance(value, FilterField):
+            # 普通值 → 等值（向后兼容）
+            return col == value
+        # FilterField 对象
+        op = value.condition
+        val = value.value
+        if op == "eq":
+            return col == val
+        elif op == "ne":
+            return col != val
+        elif op == "gt":
+            return col > val
+        elif op == "gte":
+            return col >= val
+        elif op == "lt":
+            return col < val
+        elif op == "lte":
+            return col <= val
+        elif op == "in":
+            return col.in_(val if isinstance(val, (list, tuple)) else [val])
+        elif op == "like":
+            return col.like(f"%{val}%")
+        elif op == "between":
+            if isinstance(val, (list, tuple)) and len(val) == 2:
+                start, end = val
+                if start is not None and end is not None:
+                    return col.between(start, end)
+                elif start is not None:
+                    return col >= start
+                elif end is not None:
+                    return col <= end
+                else:
+                    return None
+            raise ValueError("between 的 value 必须是 (start, end) 二元组")
+        else:
+            raise ValueError(f"不支持的运算符: {op}")
 
     def to_order_by(self) -> List[ColumnElement[Any]]:
         """
@@ -82,29 +118,15 @@ class BaseFilter(BaseModel, ABC):
         conditions: List[ColumnElement[bool]] = []
         for field_name, col in self._filter_mappings:
             value = getattr(self, field_name, None)
-            if value is not None:
-                conditions.append(col == value)
-        for start_field, end_field, col in self._date_ranges:
-            start = getattr(self, start_field, None)
-            end = getattr(self, end_field, None)
-            self._add_date_range(col, start, end, conditions)
+            cond = self._build_condition(col, value)
+            if cond is not None:
+                conditions.append(cond)
         return conditions
 
 
 class BaseSearchByKeyword(BaseModel, ABC):
     keyword: str = Field(..., description="搜索关键词")
     match_mode: Literal["exact", "fuzzy"] = Field("fuzzy", description="匹配模式")
-
-    def _get_search_params(self) -> tuple[str, bool]:
-        """
-        根据匹配模式返回处理后的表达式和匹配模式
-
-        Returns:
-            处理后的表达式和匹配模式
-        """
-        fuzzy = self.match_mode == "fuzzy"
-        expr = f"%{self.keyword}%" if fuzzy else self.keyword
-        return expr, fuzzy
 
     @abstractmethod
     def _or_conditions(self) -> List[ColumnElement[bool]]:
@@ -130,7 +152,7 @@ class SearchField(BaseModel):
         对象：    {"value": "001", "mode": "exact"}  -> 精确匹配
     """
     value: Optional[str] = Field(default=None, title="搜索值")
-    mode: Optional[Literal["exact", "fuzzy"]] = Field(
+    condition: Optional[Literal["exact", "fuzzy"]] = Field(
         default=None, title="匹配模式", description="exact=精确，fuzzy=模糊")
 
     @model_validator(mode="before")
@@ -141,7 +163,7 @@ class SearchField(BaseModel):
         这样后续会继承全局 match_mode（默认模糊）。
         """
         if isinstance(data, str):
-            return {"value": data, "mode": None}
+            return {"value": data, "condition": None}
         return data
 
 
@@ -180,7 +202,7 @@ class BaseSearchByFields(BaseModel, ABC):
         """
         if not field or field.value is None:
             return None
-        mode = field.mode or self.match_mode
+        mode = field.condition or self.match_mode
         return column.ilike(f"%{field.value}%") if mode == "fuzzy" else column == field.value
 
     def _relation_cond(
@@ -202,7 +224,7 @@ class BaseSearchByFields(BaseModel, ABC):
             return None
         target_col = getattr(target_model, target_col_name)
         rel = getattr(self._model_class(), relation_attr)
-        mode = field.mode or self.match_mode
+        mode = field.condition or self.match_mode
         if mode == "fuzzy":
             return rel.has(target_col.ilike(f"%{field.value}%"))
         return rel.has(target_col == field.value)
@@ -236,4 +258,4 @@ class BaseSearchByFields(BaseModel, ABC):
         return conditions
 
 
-__all__ = ["BaseFilter", "BaseSearchByKeyword", "SearchField", "BaseSearchByFields"]
+__all__ = ["FilterField", "BaseFilter", "BaseSearchByKeyword", "SearchField", "BaseSearchByFields"]
