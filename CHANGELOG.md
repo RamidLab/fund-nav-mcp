@@ -1,3 +1,9 @@
+## [0.9.0] 2026-05-10
+
+### Added
+
+- **新增实体筛选与搜索类**：为 `FundCategory`、`FundCategoryMapping`、`FundNav`、`FundReturn`、`FundHolding` 共 5 个模型新增对应的 `Filter` 和 `SearchByKeyword` / `SearchByFields` 类，实现全部主要实体的筛选与搜索能力覆盖。所有类均基于工厂函数自动生成，支持排序（`sort_by` / `sort_order`）和跨表关联过滤（如按父分类名称查分类、按基金代码查净值记录等）。
+
 ## [0.8.2] 2026-05-10
 
 ### Added

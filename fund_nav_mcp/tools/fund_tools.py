@@ -2,6 +2,12 @@ __all__ = [
     "get_fund_list", "search_funds_by_keyword", "search_funds_by_fields",
     "get_fund_manager_list", "search_fund_manager_by_keyword", "search_fund_manager_by_fields",
     "get_fund_manager_person_list", "search_fund_manager_person_by_keyword", "search_fund_manager_person_by_fields",
+    "get_fund_category_list", "search_fund_category_by_keyword", "search_fund_category_by_fields",
+    "get_fund_category_mapping_list",
+    "get_fund_nav_list", "search_fund_nav_by_keyword", "search_fund_nav_by_fields",
+    "get_fund_return_list", "search_fund_return_by_keyword", "search_fund_return_by_fields",
+    "get_fund_holding_list", "search_fund_holding_by_keyword", "search_fund_holding_by_fields",
+
 ]
 
 from typing import Optional, Type, Union
@@ -11,13 +17,17 @@ from sqlalchemy.orm import DeclarativeBase
 
 from fund_nav_mcp.db.core import get_manager
 from fund_nav_mcp.models.common import UtilResponse
-from fund_nav_mcp.models.orm import Fund, FundManager, FundManagerPerson
+from fund_nav_mcp.models.orm import Fund, FundManager, FundManagerPerson, FundCategory, FundCategoryMapping, FundNav, \
+    FundReturn, FundHolding
 from fund_nav_mcp.models.pydantic import BaseFilter, BaseSearchByKeyword, BaseSearchByFields
 from fund_nav_mcp.models.pydantic.filter import (
-    FundFilter, FundManagerFilter, FundManagerPersonFilter)
+    FundFilter, FundManagerFilter, FundManagerPersonFilter, FundCategoryFilter, FundNavFilter,
+    FundCategoryMappingFilter, FundReturnFilter, FundHoldingFilter)
 from fund_nav_mcp.models.pydantic.search import (
     FundSearchByKeyword, FundSearchByFields, FundManagerSearchByKeyword, FundManagerSearchByFields,
-    FundManagerPersonSearchByKeyword, FundManagerPersonSearchByFields)
+    FundManagerPersonSearchByKeyword, FundManagerPersonSearchByFields, FundCategorySearchByKeyword,
+    FundCategorySearchByFields, FundNavSearchByKeyword, FundNavSearchByFields, FundReturnSearchByKeyword,
+    FundReturnSearchByFields, FundHoldingSearchByFields, FundHoldingSearchByKeyword)
 from fund_nav_mcp.models.schemas import PaginationParams
 from fund_nav_mcp.utils.enums import Errcode
 
@@ -242,3 +252,198 @@ async def search_fund_manager_person_by_fields(
 ) -> UtilResponse:
     """高级搜索基金经理"""
     return await _execute_paginated_query(FundManagerPerson, params, search, db_name)
+
+
+@tool(
+    name="get_fund_category_list",
+    title="获取基金分类列表",
+    description="获取基金分类列表，支持筛选和排序",
+    tags={"fund_tool"}
+)
+async def get_fund_category_list(
+        params: PaginationParams = PaginationParams(),
+        filters: Optional[FundCategoryFilter] = None,
+        db_name: str = "default"
+) -> UtilResponse:
+    """获取基金分类列表"""
+    return await _execute_paginated_query(FundCategory, params, filters, db_name)
+
+
+@tool(
+    name="search_fund_category_by_keyword",
+    title="搜索基金分类",
+    description="根据关键词搜索基金分类",
+    tags={"fund_tool"}
+)
+async def search_fund_category_by_keyword(
+        keyword: FundCategorySearchByKeyword,
+        params: PaginationParams = PaginationParams(),
+        db_name: str = "default"
+) -> UtilResponse:
+    """关键词搜索基金分类"""
+    return await _execute_paginated_query(FundCategory, params, keyword, db_name)
+
+
+@tool(
+    name="search_fund_category_by_fields",
+    title="高级搜索基金分类",
+    description="根据基金分类字段进行高级搜索，支持字段级匹配模式控制",
+    tags={"fund_tool"}
+)
+async def search_fund_category_by_fields(
+        search: FundCategorySearchByFields,
+        params: PaginationParams = PaginationParams(),
+        db_name: str = "default"
+) -> UtilResponse:
+    """高级搜索基金分类"""
+    return await _execute_paginated_query(FundCategory, params, search, db_name)
+
+
+@tool(
+    name="get_fund_category_mapping_list",
+    title="获取基金分类映射列表",
+    description="获取基金分类映射列表，支持筛选和排序",
+    tags={"fund_tool"}
+)
+async def get_fund_category_mapping_list(
+        params: PaginationParams = PaginationParams(),
+        filters: Optional[FundCategoryMappingFilter] = None,
+        db_name: str = "default"
+) -> UtilResponse:
+    """获取基金分类映射列表"""
+    return await _execute_paginated_query(FundCategoryMapping, params, filters, db_name)
+
+
+@tool(
+    name="get_fund_nav_list",
+    title="获取基金净值列表",
+    description="获取基金净值列表，支持筛选和排序",
+    tags={"fund_tool"}
+)
+async def get_fund_nav_list(
+        params: PaginationParams = PaginationParams(),
+        filters: Optional[FundNavFilter] = None,
+        db_name: str = "default"
+) -> UtilResponse:
+    """获取基金净值列表"""
+    return await _execute_paginated_query(FundNav, params, filters, db_name)
+
+
+@tool(
+    name="search_fund_nav_by_keyword",
+    title="搜索基金净值",
+    description="根据关键词搜索基金净值",
+    tags={"fund_tool"}
+)
+async def search_fund_nav_by_keyword(
+        keyword: FundNavSearchByKeyword,
+        params: PaginationParams = PaginationParams(),
+        db_name: str = "default"
+) -> UtilResponse:
+    """关键词搜索基金分类"""
+    return await _execute_paginated_query(FundNav, params, keyword, db_name)
+
+
+@tool(
+    name="search_fund_nav_by_fields",
+    title="高级搜索基金净值",
+    description="根据基金净值字段进行高级搜索，支持字段级匹配模式控制",
+    tags={"fund_tool"}
+)
+async def search_fund_nav_by_fields(
+        search: FundNavSearchByFields,
+        params: PaginationParams = PaginationParams(),
+        db_name: str = "default"
+) -> UtilResponse:
+    """高级搜索基金净值"""
+    return await _execute_paginated_query(FundNav, params, search, db_name)
+
+
+@tool(
+    name="get_fund_return_list",
+    title="获取基金收益率列表",
+    description="获取基金收益率列表，支持筛选和排序",
+    tags={"fund_tool"}
+)
+async def get_fund_return_list(
+        params: PaginationParams = PaginationParams(),
+        filters: Optional[FundReturnFilter] = None,
+        db_name: str = "default"
+) -> UtilResponse:
+    """获取基金收益率列表"""
+    return await _execute_paginated_query(FundReturn, params, filters, db_name)
+
+
+@tool(
+    name="search_fund_return_by_keyword",
+    title="搜索基金收益率",
+    description="根据关键词搜索基金收益率",
+    tags={"fund_tool"}
+)
+async def search_fund_return_by_keyword(
+        keyword: FundReturnSearchByKeyword,
+        params: PaginationParams = PaginationParams(),
+        db_name: str = "default"
+) -> UtilResponse:
+    """关键词搜索基金收益率"""
+    return await _execute_paginated_query(FundReturn, params, keyword, db_name)
+
+
+@tool(
+    name="search_fund_return_by_fields",
+    title="高级搜索基金收益率",
+    description="根据基金收益率字段进行高级搜索，支持字段级匹配模式控制",
+    tags={"fund_tool"}
+)
+async def search_fund_return_by_fields(
+        search: FundReturnSearchByFields,
+        params: PaginationParams = PaginationParams(),
+        db_name: str = "default"
+) -> UtilResponse:
+    """高级搜索基金收益率"""
+    return await _execute_paginated_query(FundReturn, params, search, db_name)
+
+
+@tool(
+    name="get_fund_holding_list",
+    title="获取基金持仓列表",
+    description="获取基金持仓列表，支持筛选和排序",
+    tags={"fund_tool"}
+)
+async def get_fund_holding_list(
+        params: PaginationParams = PaginationParams(),
+        filters: Optional[FundHoldingFilter] = None,
+        db_name: str = "default"
+) -> UtilResponse:
+    """获取基金持仓列表"""
+    return await _execute_paginated_query(FundHolding, params, filters, db_name)
+
+
+@tool(
+    name="search_fund_holding_by_keyword",
+    title="搜索基金持仓",
+    description="根据关键词搜索基金持仓",
+    tags={"fund_tool"}
+)
+async def search_fund_holding_by_keyword(
+        keyword: FundHoldingSearchByKeyword,
+        params: PaginationParams = PaginationParams(),
+        db_name: str = "default"
+) -> UtilResponse:
+    """关键词搜索基金持仓"""
+    return await _execute_paginated_query(FundHolding, params, keyword, db_name)
+
+
+@tool(
+    name="search_fund_holding_by_fields",
+    title="高级搜索基金持仓",
+    description="根据基金持仓字段进行高级搜索，支持字段级匹配模式控制",
+    tags={"fund_tool"}
+)
+async def search_fund_holding_by_fields(
+        search: FundHoldingSearchByFields,
+        params: PaginationParams = PaginationParams(),
+        db_name: str = "default"
+) -> UtilResponse:
+    """高级搜索基金持仓"""
+    return await _execute_paginated_query(FundHolding, params, search, db_name)
