@@ -1,3 +1,27 @@
+## [0.9.2] 2026-05-11
+
+### Added
+
+- **外键显示处理**：新增 [`ForeignKeyDisplayHandler`](fund_nav_mcp/handlers/query_handlers.py) 类，实现配置化的外键字段自动替换。通过 `FIELD_MAPPING_CONFIG` 声明外键与目标显示字段的映射关系，分页查询后自动将外键 ID 替换为关联对象的可读字段，并移除原始外键列，使 API 响应更友好。
+
+### Changed
+
+- **查询工具统一重构**：所有 MCP 工具函数（基金/净值/收益等）不再独立调用 `_execute_paginated_query`，改为统一使用 `ForeignKeyDisplayHandler` 执行分页查询与外键展开。
+
+### Removed
+
+- 移除旧版 `_execute_paginated_query` 辅助函数及相关直接操作数据库管理器的代码，其职责已并入 `ForeignKeyDisplayHandler`。
+
+## [0.9.1] 2026-05-11
+
+### Changed
+
+- **ORM 基类统一**：在 [`Base`](fund_nav_mcp/models/orm/base.py) 类集中定义 `id`、`created_at`、`updated_at` 公共字段。所有 ORM 模型（Fund、FundNav、FundReturn 等）均已切换为继承该 `Base`，并将项目中所有原有的独立 `DeclarativeBase` 引用替换为统一的 `Base`。
+
+### Removed
+
+- 移除各模型类中原有的 `id`、`created_at`、`updated_at` 字段重复声明。
+
 ## [0.9.0] 2026-05-10
 
 ### Added

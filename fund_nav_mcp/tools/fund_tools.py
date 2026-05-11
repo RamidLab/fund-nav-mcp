@@ -10,16 +10,14 @@ __all__ = [
 
 ]
 
-from typing import Optional, Type, Union
+from typing import Optional
 
 from fastmcp.tools import tool
-from sqlalchemy.orm import DeclarativeBase
 
-from fund_nav_mcp.db.core import get_manager
+from fund_nav_mcp.handlers.query_handlers import ForeignKeyDisplayHandler
 from fund_nav_mcp.models.common import UtilResponse
 from fund_nav_mcp.models.orm import Fund, FundManager, FundManagerPerson, FundCategory, FundCategoryMapping, FundNav, \
     FundReturn, FundHolding
-from fund_nav_mcp.models.pydantic import BaseFilter, BaseSearchByKeyword, BaseSearchByFields
 from fund_nav_mcp.models.pydantic.filter import (
     FundFilter, FundManagerFilter, FundManagerPersonFilter, FundCategoryFilter, FundNavFilter,
     FundCategoryMappingFilter, FundReturnFilter, FundHoldingFilter)
@@ -29,31 +27,12 @@ from fund_nav_mcp.models.pydantic.search import (
     FundCategorySearchByFields, FundNavSearchByKeyword, FundNavSearchByFields, FundReturnSearchByKeyword,
     FundReturnSearchByFields, FundHoldingSearchByFields, FundHoldingSearchByKeyword)
 from fund_nav_mcp.models.schemas import PaginationParams
-from fund_nav_mcp.utils.enums import Errcode
 
 
-async def _execute_paginated_query(
-        model: Type[DeclarativeBase],
-        params: PaginationParams,
-        filter_or_search: Union[BaseFilter, BaseSearchByKeyword, BaseSearchByFields, None],
-        db_name: str
-) -> UtilResponse:
-    mgr = (await get_manager("db", db_name))["mgr"]
-
-    where = None
-    order_by = None
-
-    if filter_or_search is not None:
-        if isinstance(filter_or_search, BaseFilter):
-            where = filter_or_search.to_where()
-            order_by = filter_or_search.to_order_by()
-        elif isinstance(filter_or_search, (BaseSearchByKeyword, BaseSearchByFields)):
-            where = filter_or_search.to_where()
-        else:
-            raise TypeError(f"不支持的过滤器类型: {type(filter_or_search)}")
-
-    page_data = await mgr.paginate(model, params, where=where, order_by=order_by)
-    return UtilResponse(code=Errcode.SUCCESS, message="成功", data=page_data)
+async def _handle_query(model, params, filter_or_search, db_name: str = "default") -> UtilResponse:
+    """统一创建 Handler 并执行查询"""
+    query_handler = ForeignKeyDisplayHandler()
+    return await query_handler.handle(model, params, filter_or_search, db_name)
 
 
 @tool(
@@ -77,7 +56,7 @@ async def get_fund_list(
     Returns:
         通用响应
     """
-    return await _execute_paginated_query(Fund, params, filters, db_name)
+    return await _handle_query(Fund, params, filters, db_name)
 
 
 @tool(
@@ -102,7 +81,7 @@ async def search_funds_by_keyword(
     Returns:
         通用响应，包含分页的基金列表
     """
-    return await _execute_paginated_query(Fund, params, keyword, db_name)
+    return await _handle_query(Fund, params, keyword, db_name)
 
 
 @tool(
@@ -129,7 +108,7 @@ async def search_funds_by_fields(
     Returns:
         通用响应，包含分页的基金列表
     """
-    return await _execute_paginated_query(Fund, params, search, db_name)
+    return await _handle_query(Fund, params, search, db_name)
 
 
 @tool(
@@ -154,7 +133,7 @@ async def get_fund_manager_list(
     Returns:
         通用响应，包含分页的基金管理人（机构）列表
     """
-    return await _execute_paginated_query(FundManager, params, filters, db_name)
+    return await _handle_query(FundManager, params, filters, db_name)
 
 
 @tool(
@@ -179,7 +158,7 @@ async def search_fund_manager_by_keyword(
     Returns:
         通用响应，包含分页的基金管理人（机构）列表
     """
-    return await _execute_paginated_query(FundManager, params, keyword, db_name)
+    return await _handle_query(FundManager, params, keyword, db_name)
 
 
 @tool(
@@ -206,7 +185,7 @@ async def search_fund_manager_by_fields(
     Returns:
         通用响应，包含分页的基金列表
     """
-    return await _execute_paginated_query(FundManager, params, search, db_name)
+    return await _handle_query(FundManager, params, search, db_name)
 
 
 @tool(
@@ -221,7 +200,7 @@ async def get_fund_manager_person_list(
         db_name: str = "default"
 ) -> UtilResponse:
     """获取基金经理列表"""
-    return await _execute_paginated_query(FundManagerPerson, params, filters, db_name)
+    return await _handle_query(FundManagerPerson, params, filters, db_name)
 
 
 @tool(
@@ -236,7 +215,7 @@ async def search_fund_manager_person_by_keyword(
         db_name: str = "default"
 ) -> UtilResponse:
     """关键词搜索基金经理"""
-    return await _execute_paginated_query(FundManagerPerson, params, keyword, db_name)
+    return await _handle_query(FundManagerPerson, params, keyword, db_name)
 
 
 @tool(
@@ -251,7 +230,7 @@ async def search_fund_manager_person_by_fields(
         db_name: str = "default"
 ) -> UtilResponse:
     """高级搜索基金经理"""
-    return await _execute_paginated_query(FundManagerPerson, params, search, db_name)
+    return await _handle_query(FundManagerPerson, params, search, db_name)
 
 
 @tool(
@@ -266,7 +245,7 @@ async def get_fund_category_list(
         db_name: str = "default"
 ) -> UtilResponse:
     """获取基金分类列表"""
-    return await _execute_paginated_query(FundCategory, params, filters, db_name)
+    return await _handle_query(FundCategory, params, filters, db_name)
 
 
 @tool(
@@ -281,7 +260,7 @@ async def search_fund_category_by_keyword(
         db_name: str = "default"
 ) -> UtilResponse:
     """关键词搜索基金分类"""
-    return await _execute_paginated_query(FundCategory, params, keyword, db_name)
+    return await _handle_query(FundCategory, params, keyword, db_name)
 
 
 @tool(
@@ -296,7 +275,7 @@ async def search_fund_category_by_fields(
         db_name: str = "default"
 ) -> UtilResponse:
     """高级搜索基金分类"""
-    return await _execute_paginated_query(FundCategory, params, search, db_name)
+    return await _handle_query(FundCategory, params, search, db_name)
 
 
 @tool(
@@ -311,7 +290,7 @@ async def get_fund_category_mapping_list(
         db_name: str = "default"
 ) -> UtilResponse:
     """获取基金分类映射列表"""
-    return await _execute_paginated_query(FundCategoryMapping, params, filters, db_name)
+    return await _handle_query(FundCategoryMapping, params, filters, db_name)
 
 
 @tool(
@@ -326,7 +305,7 @@ async def get_fund_nav_list(
         db_name: str = "default"
 ) -> UtilResponse:
     """获取基金净值列表"""
-    return await _execute_paginated_query(FundNav, params, filters, db_name)
+    return await _handle_query(FundNav, params, filters, db_name)
 
 
 @tool(
@@ -341,7 +320,7 @@ async def search_fund_nav_by_keyword(
         db_name: str = "default"
 ) -> UtilResponse:
     """关键词搜索基金分类"""
-    return await _execute_paginated_query(FundNav, params, keyword, db_name)
+    return await _handle_query(FundNav, params, keyword, db_name)
 
 
 @tool(
@@ -356,7 +335,7 @@ async def search_fund_nav_by_fields(
         db_name: str = "default"
 ) -> UtilResponse:
     """高级搜索基金净值"""
-    return await _execute_paginated_query(FundNav, params, search, db_name)
+    return await _handle_query(FundNav, params, search, db_name)
 
 
 @tool(
@@ -371,7 +350,7 @@ async def get_fund_return_list(
         db_name: str = "default"
 ) -> UtilResponse:
     """获取基金收益率列表"""
-    return await _execute_paginated_query(FundReturn, params, filters, db_name)
+    return await _handle_query(FundReturn, params, filters, db_name)
 
 
 @tool(
@@ -386,7 +365,7 @@ async def search_fund_return_by_keyword(
         db_name: str = "default"
 ) -> UtilResponse:
     """关键词搜索基金收益率"""
-    return await _execute_paginated_query(FundReturn, params, keyword, db_name)
+    return await _handle_query(FundReturn, params, keyword, db_name)
 
 
 @tool(
@@ -401,7 +380,7 @@ async def search_fund_return_by_fields(
         db_name: str = "default"
 ) -> UtilResponse:
     """高级搜索基金收益率"""
-    return await _execute_paginated_query(FundReturn, params, search, db_name)
+    return await _handle_query(FundReturn, params, search, db_name)
 
 
 @tool(
@@ -416,7 +395,7 @@ async def get_fund_holding_list(
         db_name: str = "default"
 ) -> UtilResponse:
     """获取基金持仓列表"""
-    return await _execute_paginated_query(FundHolding, params, filters, db_name)
+    return await _handle_query(FundHolding, params, filters, db_name)
 
 
 @tool(
@@ -431,7 +410,7 @@ async def search_fund_holding_by_keyword(
         db_name: str = "default"
 ) -> UtilResponse:
     """关键词搜索基金持仓"""
-    return await _execute_paginated_query(FundHolding, params, keyword, db_name)
+    return await _handle_query(FundHolding, params, keyword, db_name)
 
 
 @tool(
@@ -446,4 +425,4 @@ async def search_fund_holding_by_fields(
         db_name: str = "default"
 ) -> UtilResponse:
     """高级搜索基金持仓"""
-    return await _execute_paginated_query(FundHolding, params, search, db_name)
+    return await _handle_query(FundHolding, params, search, db_name)
