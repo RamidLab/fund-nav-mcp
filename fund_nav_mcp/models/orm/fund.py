@@ -22,7 +22,6 @@ class Fund(Base):
     """基金基本信息模型"""
     __tablename__ = 'fund'
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     fund_code: Mapped[str] = mapped_column(String(20), unique=True, comment='基金代码')
     fund_name: Mapped[str] = mapped_column(String(200), comment='基金名称')
     fund_short_name: Mapped[Optional[str]] = mapped_column(String(100), comment='基金简称')
@@ -38,8 +37,6 @@ class Fund(Base):
     establishment_date: Mapped[Date] = mapped_column(Date, comment='成立日期')
     registration_date: Mapped[Date] = mapped_column(Date, comment='备案日期')
     status: Mapped[FundStatus] = mapped_column(Integer, comment='基金状态')
-    created_at: Mapped[DateTime] = mapped_column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
-    updated_at: Mapped[DateTime] = mapped_column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
 
     # 关系
     manager: Mapped['FundManager'] = relationship('FundManager', back_populates='funds')
@@ -67,7 +64,6 @@ class FundNav(Base):
     """基金净值模型"""
     __tablename__ = 'fund_nav'
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     fund_id: Mapped[int] = mapped_column(Integer, comment='基金产品ID，关联fund表的ID')
     nav_date: Mapped[Date] = mapped_column(Date, comment='净值日期')
     unit_nav: Mapped[float] = mapped_column(DECIMAL(10, 4), comment='单位净值')
@@ -76,8 +72,6 @@ class FundNav(Base):
     daily_return_rate: Mapped[Optional[float]] = mapped_column(DECIMAL(10, 4), comment='日增长率')
     nav_status: Mapped[FundNavStatus] = mapped_column(Integer, comment='净值状态')
     data_source: Mapped[FundDataSource] = mapped_column(Integer, comment='数据来源')
-    created_at: Mapped[DateTime] = mapped_column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
-    updated_at: Mapped[DateTime] = mapped_column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
 
     # 关系
     fund: Mapped['Fund'] = relationship("Fund", back_populates="nav_records")
@@ -95,15 +89,12 @@ class FundReturn(Base):
     """基金收益率模型"""
     __tablename__ = 'fund_returns'
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     fund_id: Mapped[int] = mapped_column(Integer, comment='基金产品ID，关联fund表的ID')
     period_type: Mapped[PeriodType] = mapped_column(Integer, comment='周期类型')
     return_rate: Mapped[float] = mapped_column(DECIMAL(10, 4), comment='收益率')
     rank: Mapped[int] = mapped_column(Integer, comment='同类排名')
     total_funds: Mapped[int] = mapped_column(Integer, comment='同类总数')
     calculation_date: Mapped[Date] = mapped_column(Date, nullable=False, comment='计算日期')
-    created_at: Mapped[DateTime] = mapped_column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
-    updated_at: Mapped[DateTime] = mapped_column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
 
     # 关系
     fund: Mapped['Fund'] = relationship("Fund", back_populates="returns")
@@ -122,7 +113,6 @@ class FundHolding(Base):
     """基金持仓信息模型"""
     __tablename__ = 'fund_holdings'
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     fund_id: Mapped[int] = mapped_column(Integer, comment='基金产品ID，关联fund表的ID')
     report_date: Mapped[Date] = mapped_column(Date, comment='报告日期')
     stock_code: Mapped[str] = mapped_column(String(20), comment='股票代码')
@@ -130,8 +120,6 @@ class FundHolding(Base):
     holding_ratio: Mapped[float] = mapped_column(DECIMAL(6, 4), comment='持仓比例')
     market_value: Mapped[float] = mapped_column(DECIMAL(15, 2), comment='市值（万元）')
     shares_held: Mapped[float] = mapped_column(DECIMAL(15, 2), comment='持股数量（万股）')
-    created_at: Mapped[DateTime] = mapped_column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
-    updated_at: Mapped[DateTime] = mapped_column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
 
     # 关系
     fund: Mapped['Fund'] = relationship("Fund", back_populates="holdings")

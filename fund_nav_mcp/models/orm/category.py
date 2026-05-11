@@ -20,14 +20,11 @@ class FundCategory(Base):
     """基金分类模型"""
     __tablename__ = 'fund_category'
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     category_code: Mapped[str] = mapped_column(String(20), unique=True, comment='分类代码')
     category_name: Mapped[str] = mapped_column(String(100), comment='分类名称')
     parent_id: Mapped[Optional[int]] = mapped_column(Integer, comment='父级分类ID')
     level: Mapped[int] = mapped_column(Integer, default=1, comment='分类层级')
     description: Mapped[Optional[str]] = mapped_column(Text, comment='分类描述')
-    created_at: Mapped[DateTime] = mapped_column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
-    updated_at: Mapped[DateTime] = mapped_column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
 
     # 自引用关系
     parent: Mapped[Optional["FundCategory"]] = relationship(
@@ -50,11 +47,8 @@ class FundCategoryMapping(Base):
     """基金分类关联模型"""
     __tablename__ = 'fund_category_mapping'
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     fund_id: Mapped[int] = mapped_column(Integer, comment='基金ID')
     category_id: Mapped[int] = mapped_column(Integer, comment='分类ID')
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
-    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
 
     # 唯一约束
     __table_args__ = (

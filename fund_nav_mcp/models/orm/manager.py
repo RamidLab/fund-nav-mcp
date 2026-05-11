@@ -18,7 +18,6 @@ class FundManager(Base):
     """基金管理人/公司信息表（基于 amac 公示数据）"""
     __tablename__ = 'fund_manager'
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     # 基础信息
     company_name: Mapped[str] = mapped_column(String(100), unique=True, comment='公司全称')
     english_name: Mapped[Optional[str]] = mapped_column(String(200), comment='英文名称')
@@ -44,8 +43,6 @@ class FundManager(Base):
     # 状态
     is_member: Mapped[bool] = mapped_column(default=False, comment='是否为会员')
     legal_representative: Mapped[Optional[str]] = mapped_column(String(50), comment='法定代表人')
-    created_at: Mapped[DateTime] = mapped_column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
-    updated_at: Mapped[DateTime] = mapped_column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
 
     # 关系
     funds: Mapped[List['Fund']] = relationship('Fund', back_populates='manager')
@@ -62,7 +59,6 @@ class FundManagerPerson(Base):
     """基金经理个人（公募）或投资经理（私募）信息表"""
     __tablename__ = 'fund_manager_person'
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(50), comment='姓名')
     gender: Mapped[Optional[str]] = mapped_column(String(10), comment='性别')
     birth_date: Mapped[Optional[Date]] = mapped_column(Date, comment='出生日期')

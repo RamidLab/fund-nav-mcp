@@ -4,7 +4,7 @@ __all__ = ["DBManager", "InfluxDBManager", "get_manager"]
 
 import asyncio
 from contextlib import asynccontextmanager
-from typing import Any, Dict, List, Optional, Type, cast, Union, AsyncIterator, Literal
+from typing import Any, Dict, List, Optional, Type, cast, Union, AsyncIterator, Literal, TypedDict, overload
 
 from influxdb_client import InfluxDBClient, Point, QueryApi
 from influxdb_client.client.write_api import SYNCHRONOUS, WriteApi
@@ -16,7 +16,6 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
     async_sessionmaker,
 )
-from sqlalchemy.orm import DeclarativeBase
 
 from fund_nav_mcp.config import get_settings
 from fund_nav_mcp.db import RdbmsDBManager, TimeseriesDBManager
@@ -41,7 +40,7 @@ class DBManager(RdbmsDBManager):
         self._max_overflow: int = max_overflow
         self._engine: Optional[AsyncEngine] = None
         self._session_factory: Optional[async_sessionmaker[AsyncSession]] = None
-        self._base: Type[DeclarativeBase] = Base
+        self._base: Type[Base] = Base
 
     async def connect(self) -> None:
         """连接数据库"""
@@ -194,11 +193,11 @@ class DBManager(RdbmsDBManager):
 
     async def paginate(
             self,
-            model: Type[DeclarativeBase],
+            model: Type[Base],
             params: PaginationParams,
             where: Optional[List[Any]] = None,
             order_by: Optional[List[Any]] = None,
-    ) -> PageData:
+    ) -> PageData[Dict[str, Any]]:
         """
         通用分页查询，返回 PageData。
 
@@ -447,10 +446,37 @@ class InfluxDBManager(TimeseriesDBManager):
         return point
 
 
-_manager_cache: Dict[str, Dict[str, Dict[str, Any]]] = {}
+class ManagerType(TypedDict):
+    mgr: Union[DBManager, TimeseriesDBManager]
+    db_type: str
 
 
-async def get_manager(_class: Literal["db", "cache"], db_name: str) -> Dict[str, Any]:
+class DbManagerResult(ManagerType):
+    mgr: DBManager
+
+
+class TimeseriesManagerResult(ManagerType):
+    mgr: TimeseriesDBManager
+
+
+_manager_cache: Dict[Literal["db", "cache"], Dict[str, ManagerType]] = {}
+
+
+@overload
+async def get_manager(
+        _class: Literal["db"], db_name: str
+) -> DbManagerResult: ...
+
+
+@overload
+async def get_manager(
+        _class: Literal["cache"], db_name: str
+) -> TimeseriesManagerResult: ...
+
+
+async def get_manager(
+        _class: Literal["db", "cache"], db_name: str
+) -> ManagerType:
     """
     获取数据库或缓存连接器
 
@@ -461,7 +487,7 @@ async def get_manager(_class: Literal["db", "cache"], db_name: str) -> Dict[str,
     Returns:
         数据库连接器实例，包含 mgr 和 db_type 键
     """
-    manager_cache = _manager_cache.setdefault(_class, {})
+    manager_cache: Dict[str, ManagerType] = _manager_cache.setdefault(_class, {})
 
     if db_name in manager_cache:
         return manager_cache[db_name]

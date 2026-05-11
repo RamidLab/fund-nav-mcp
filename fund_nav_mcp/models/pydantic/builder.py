@@ -8,9 +8,10 @@ from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union, Set
 
 from pydantic import Field, create_model
 from sqlalchemy import Boolean, Date, DateTime, Integer, String, Text, ColumnElement
-from sqlalchemy.orm import DeclarativeBase, InstrumentedAttribute, Mapped
+from sqlalchemy.orm import InstrumentedAttribute, Mapped
 from sqlalchemy.sql.sqltypes import Enum as SQLEnum
 
+from fund_nav_mcp.models.orm import Base
 from fund_nav_mcp.models.pydantic import BaseFilter, BaseSearchByKeyword, SearchField, BaseSearchByFields, FilterField
 from fund_nav_mcp.utils.log import get_logger
 
@@ -105,7 +106,7 @@ def _safe_column_python_type(col: InstrumentedAttribute) -> type:
 
 
 def _selected_model_columns(
-        model: Type[DeclarativeBase],
+        model: Type[Base],
         include: Optional[List[str]] = None,
         exclude: Optional[List[str]] = None,
         *,
@@ -219,7 +220,7 @@ def _drop_abstract_methods(cls: type, *method_names: str) -> None:
 
 
 def create_filter_class(
-        model: Type[DeclarativeBase],
+        model: Type[Base],
         include: Optional[List[str]] = None,
         exclude: Optional[List[str]] = None,
         column_mappings: Optional[Dict[str, Union[InstrumentedAttribute, Tuple[InstrumentedAttribute, type], Tuple[
@@ -351,11 +352,11 @@ def create_filter_class(
 
 
 def create_search_class(
-        model: Type[DeclarativeBase],
+        model: Type[Base],
         include: Optional[List[str]] = None,
         exclude: Optional[List[str]] = None,
         column_mappings: Optional[Dict[str, Tuple[InstrumentedAttribute, type]]] = None,
-        relation_mappings: Optional[Dict[str, Tuple[str, Type[DeclarativeBase], str]]] = None,
+        relation_mappings: Optional[Dict[str, Tuple[str, Type[Base], str]]] = None,
         suppress_warnings: bool = False,
 ) -> Tuple[Type["BaseSearchByKeyword"], Type["BaseSearchByFields"]]:
     """
@@ -403,7 +404,7 @@ def create_search_class(
         match_mode=(Literal["exact", "fuzzy"], Field("fuzzy", description="匹配模式")),
     )
 
-    def _or_conditions(self) -> List[Any]:
+    def _or_conditions(self: "BaseSearchByKeyword") -> List[Any]:
         fuzzy = self.match_mode == "fuzzy"
         expr = f"%{self.keyword}%" if fuzzy else self.keyword
 
@@ -456,8 +457,10 @@ def create_search_class(
             ],
         )
 
-    def _relation_cond(self, relation_attr: str, target_model: Type[DeclarativeBase], target_col_name: str,
-                       field: SearchField) -> Optional[Any]:
+    def _relation_cond(
+            self: "BaseSearchByFields",
+            relation_attr: str, target_model: Type[Base], target_col_name: str, field: SearchField
+    ) -> Optional[Any]:
         if not field or field.value is None:
             return None
         rel = getattr(self._model_class(), relation_attr)

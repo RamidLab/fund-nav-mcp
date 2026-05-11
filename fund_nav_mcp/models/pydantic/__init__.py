@@ -4,9 +4,11 @@ from typing import TypeVar, Optional, List, Any, Literal, Tuple, Dict, Union
 
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import desc, asc, ColumnElement, or_
-from sqlalchemy.orm import DeclarativeBase, InstrumentedAttribute
+from sqlalchemy.orm import InstrumentedAttribute
 
-T = TypeVar("T", bound=DeclarativeBase)
+from fund_nav_mcp.models.orm import Base
+
+T = TypeVar("T", bound=Base)
 
 ScalarValue = Union[int, float, str, bool, date, datetime]
 FilterValue = Union[
