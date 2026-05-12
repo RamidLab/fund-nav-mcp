@@ -14,7 +14,7 @@ from typing import Optional
 
 from fastmcp.tools import tool
 
-from fund_nav_mcp.handlers.query_handlers import ForeignKeyDisplayHandler
+from fund_nav_mcp.handlers import ForeignKeyDisplayHandler
 from fund_nav_mcp.models.common import UtilResponse
 from fund_nav_mcp.models.orm import Fund, FundManager, FundManagerPerson, FundCategory, FundCategoryMapping, FundNav, \
     FundReturn, FundHolding
@@ -34,6 +34,8 @@ async def _handle_query(model, params, filter_or_search, db_name: str = "default
     query_handler = ForeignKeyDisplayHandler()
     return await query_handler.handle(model, params, filter_or_search, db_name)
 
+
+# ==================== Fund ====================
 
 @tool(
     name="get_fund_list",
@@ -110,6 +112,8 @@ async def search_funds_by_fields(
     """
     return await _handle_query(Fund, params, search, db_name)
 
+
+# ==================== FundManager ====================
 
 @tool(
     name="get_fund_manager_list",
@@ -188,6 +192,8 @@ async def search_fund_manager_by_fields(
     return await _handle_query(FundManager, params, search, db_name)
 
 
+# ==================== FundManagerPerson ====================
+
 @tool(
     name="get_fund_manager_person_list",
     title="获取基金管理人（个人）列表",
@@ -232,6 +238,8 @@ async def search_fund_manager_person_by_fields(
     """高级搜索基金经理"""
     return await _handle_query(FundManagerPerson, params, search, db_name)
 
+
+# ==================== FundCategory ====================
 
 @tool(
     name="get_fund_category_list",
@@ -278,6 +286,8 @@ async def search_fund_category_by_fields(
     return await _handle_query(FundCategory, params, search, db_name)
 
 
+# ==================== FundCategoryMapping ====================
+
 @tool(
     name="get_fund_category_mapping_list",
     title="获取基金分类映射列表",
@@ -292,6 +302,8 @@ async def get_fund_category_mapping_list(
     """获取基金分类映射列表"""
     return await _handle_query(FundCategoryMapping, params, filters, db_name)
 
+
+# ==================== FundNav ====================
 
 @tool(
     name="get_fund_nav_list",
@@ -338,6 +350,8 @@ async def search_fund_nav_by_fields(
     return await _handle_query(FundNav, params, search, db_name)
 
 
+# ==================== FundReturn ====================
+
 @tool(
     name="get_fund_return_list",
     title="获取基金收益率列表",
@@ -382,6 +396,8 @@ async def search_fund_return_by_fields(
     """高级搜索基金收益率"""
     return await _handle_query(FundReturn, params, search, db_name)
 
+
+# ==================== FundHolding ====================
 
 @tool(
     name="get_fund_holding_list",
