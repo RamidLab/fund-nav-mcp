@@ -6,8 +6,10 @@ from sqlalchemy import Integer, String, Date, DECIMAL, UniqueConstraint, Foreign
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 
 from fund_nav_mcp.models.orm.base import Base
-from fund_nav_mcp.utils.enums import FundStatus, FundNavStatus, FundType, FundRegulatoryType, FundDataSource, \
-    PeriodType, FundManagementType
+from fund_nav_mcp.utils.enums import (
+    FundStatus, FundNavStatus, FundType, FundRegulatoryType, FundDataSource,
+    PeriodType, FundManagementType, ShareClass
+)
 
 if TYPE_CHECKING:
     from fund_nav_mcp.models.orm.category import FundCategory
@@ -33,6 +35,11 @@ class Fund(Base):
     establishment_date: Mapped[Date] = mapped_column(Date, comment='成立日期')
     registration_date: Mapped[Date] = mapped_column(Date, comment='备案日期')
     status: Mapped[FundStatus] = mapped_column(Integer, comment='基金状态')
+    share_class: Mapped[ShareClass] = mapped_column(
+        Integer,
+        default=ShareClass.NotApplicable,
+        comment='份额类别 A/B/C/D/E：公募区分收费模式（前端/后端/服务费），私募区分结构化层级（优先级/劣后级/夹层级）')
+    parent_fund_id: Mapped[Optional[int]] = mapped_column(Integer, comment='父基金ID，指向同一基金的主份额（通常为A类）')
 
     # 关系
     manager: Mapped['FundManager'] = relationship('FundManager', back_populates='funds')
@@ -45,14 +52,21 @@ class Fund(Base):
         "FundHolding", back_populates="fund", cascade="all, delete")
     categories: Mapped[list["FundCategory"]] = relationship(
         "FundCategory", secondary="fund_category_mapping", back_populates="funds")
+    parent: Mapped[Optional['Fund']] = relationship(
+        "Fund", remote_side='Fund.id', back_populates="children")
+    children: Mapped[List['Fund']] = relationship(
+        "Fund", back_populates="parent")
     # 列定义
     __table_args__ = (
         ForeignKeyConstraint(['fund_manager_person_id'], ['fund_manager_person.id']),
         ForeignKeyConstraint(['fund_manager_id'], ['fund_manager.id']),
+        ForeignKeyConstraint(['parent_fund_id'], ['fund.id']),
         Index('idx_fund_est_date', 'establishment_date'),  # 按成立日期排序/筛选
         Index('idx_fund_name', 'fund_name'),  # 按名称搜索（如 LIKE）
         Index('idx_fund_manager_id', 'fund_manager_id'),  # 按基金经理ID查询
         Index('idx_fund_manager_person_id', 'fund_manager_person_id'),  # 按基金经理个人ID查询
+        Index('idx_fund_share_class', 'share_class'),  # 按份额类别筛选
+        Index('idx_fund_parent_id', 'parent_fund_id'),  # 查同一基金的所有份额
     )
 
 

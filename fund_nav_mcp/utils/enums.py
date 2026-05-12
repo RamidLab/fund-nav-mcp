@@ -1,6 +1,6 @@
 __all__ = [
-    "NodeStatus", "FundStatus", "FundNavStatus", "FundType", "FundRegulatoryType", "FundManagementType",
-    "PeriodType", "FundDataSource", "ManagementScaleRange", "Errcode"
+    "NodeStatus", "FundStatus", "FundNavStatus", "FundType", "ShareClass", "FundRegulatoryType",
+    "FundManagementType", "PeriodType", "FundDataSource", "ManagementScaleRange", "Errcode",
 ]
 
 from enum import Enum
@@ -156,6 +156,60 @@ class FundType(_BaseIntEnum):
     @classmethod
     def from_label(cls, label: str) -> "FundType":
         return next((status for status in cls if status.label == label), cls.Other)
+
+
+class ShareClass(_BaseIntEnum):
+    """
+    基金份额类别枚举
+
+    同一字母在公募/私募/分级等不同基金类型中的含义完全不同：
+
+    ── 公募基金（开放式，按收费模式划分）──
+    货币基金 (Money):
+      - A 类：散客/个人投资者，申购门槛低（100元起），销售服务费较高
+      - B 类：机构/大额投资者，申购门槛高（通常500万元起），销售服务费较低，收益高于A类
+      - C 类：新增份额，申购门槛高于A类（如中欧货币C）
+      - D 类：新增份额，比C类门槛更高（如中欧货币D）；或通过公司指定平台办理
+      - E 类：指定代销机构（如互联网平台）销售；或为场内交易型货币基金（面值100元）
+
+    债券基金 (Bond):
+      - A 类：前端收费，申购时收取，费率较低
+      - B 类：后端收费，赎回时收取，持有超3年费率递减至零，适合长期投资
+      - C 类：免申赎费，但有约0.3%/年销售服务费，适合短期投资（<3年）
+
+    其他公募:
+      - D 类：特定平台/渠道专属份额（如博时黄金ETF D 官网直销），费率规则各异
+      - E 类：互联网平台专属份额或场内交易份额，收费模式类似C类
+
+    ── 私募基金（结构化产品，按风险收益层级划分）──
+      - A 类：优先级份额，风险较低，收益相对固定优先分配
+      - B 类：劣后级份额，风险较高，承担最大亏损并可能博取超额收益
+      - C 类：夹层级/中间级份额，风险收益介于A、B之间；有时也模仿公募C类收销售服务费
+      - D 类/E 类：较少出现，用于区分更细的结构化层级或特殊分配方式，需结合具体合同
+
+    ── 分级基金（公募结构化，已逐步清理）──
+      - A 类：固定收益、低风险、享有优先收益权的份额（约定收益率）
+      - B 类：浮动收益、高风险高杠杆，承担母基金扣除A类本金及收益后的全部剩余
+    """
+
+    A = 1, "A类"
+    B = 2, "B类"
+    C = 3, "C类"
+    D = 4, "D类"
+    E = 5, "E类"
+    NotApplicable = 0, "不适用"
+
+    @classmethod
+    def _missing_(cls, value: int):
+        return cls._resolver(value, default=cls.NotApplicable)
+
+    @classmethod
+    def from_name(cls, name: str) -> "ShareClass":
+        return getattr(cls, name, cls.NotApplicable)
+
+    @classmethod
+    def from_label(cls, label: str) -> "ShareClass":
+        return next((s for s in cls if s.label == label), cls.NotApplicable)
 
 
 class FundRegulatoryType(_BaseIntEnum):

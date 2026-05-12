@@ -2,7 +2,7 @@ import asyncio
 import random
 from datetime import date, timedelta, datetime, timezone
 from decimal import Decimal
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Optional
 
 from faker import Faker
 
@@ -10,7 +10,7 @@ from fund_nav_mcp.db.core import get_manager, DBManager, InfluxDBManager
 from fund_nav_mcp.models.orm import FundManager, FundManagerPerson, FundCategory, Fund, FundNav, FundReturn, \
     FundHolding, FundCategoryMapping
 from fund_nav_mcp.utils.enums import FundType, FundRegulatoryType, FundStatus, FundNavStatus, FundDataSource, \
-    PeriodType, FundManagementType
+    PeriodType, FundManagementType, ShareClass
 from fund_nav_mcp.utils.log import get_logger
 
 logger = get_logger(__name__)
@@ -121,7 +121,14 @@ async def generate_category_data() -> List[Dict[str, Any]]:
 
 async def generate_fund_data(manager_ids: List[int], person_ids: List[int]) -> List[Dict[str, Any]]:
     """
-    生成基金数据
+    生成基金数据（含份额类别和父子关系）
+
+    模拟真实公募基金的份额结构：
+      - 同一基金的不同份额（A/B/C/D/E）共享 parent_fund_code 指向 A 类主份额
+      - 货币基金：A/B/C/D/E 均有
+      - 债券基金：A/B/C 为主，偶有 E 类
+      - 股票/混合基金：A/C 为主
+      - 其他（分级基金）：A/B 结构
 
     Args:
         manager_ids: 基金人 ID 列表
@@ -130,25 +137,75 @@ async def generate_fund_data(manager_ids: List[int], person_ids: List[int]) -> L
     Returns:
         基金数据列表
     """
+
+    # 每类基金可用的份额类别
+    _SHARE_CLASSES_BY_TYPE: dict[FundType, list[ShareClass]] = {
+        FundType.Money: [ShareClass.A, ShareClass.B, ShareClass.C, ShareClass.D, ShareClass.E],
+        FundType.Bond: [ShareClass.A, ShareClass.B, ShareClass.C, ShareClass.E],
+        FundType.Stock: [ShareClass.A, ShareClass.C],
+        FundType.Mixed: [ShareClass.A, ShareClass.C],
+        FundType.Qdii: [ShareClass.A, ShareClass.C],
+        FundType.Fof: [ShareClass.A, ShareClass.C],
+        FundType.Commodity: [ShareClass.A, ShareClass.D],
+        FundType.Other: [ShareClass.A, ShareClass.B],
+        FundType.Alternative: [ShareClass.A],
+    }
+
+    # 基金家族定义: (基金名, fund_type, 包含的份额类别)
+    families = [
+        ("天弘增利宝", FundType.Money, [ShareClass.A, ShareClass.B, ShareClass.C, ShareClass.E]),
+        ("华夏现金增利", FundType.Money, [ShareClass.A, ShareClass.B]),
+        ("易方达稳健收益", FundType.Bond, [ShareClass.A, ShareClass.B, ShareClass.C]),
+        ("招商产业债", FundType.Bond, [ShareClass.A, ShareClass.C]),
+        ("嘉实沪深300", FundType.Stock, [ShareClass.A, ShareClass.C]),
+        ("兴全合润", FundType.Mixed, [ShareClass.A, ShareClass.C]),
+        ("博时黄金ETF", FundType.Commodity, [ShareClass.A, ShareClass.D]),
+        ("瑞福分级", FundType.Other, [ShareClass.A, ShareClass.B]),
+    ]
+
+    fund_id = 1
+    code_prefixes = ["00", "11", "16", "15", "51"]  # 不同基金公司代码前缀
     funds = []
-    for i in range(1, 11):  # 生成10只基金
-        start_date = fake.date_between(start_date="-10y", end_date="-1y")
-        funds.append({
-            "id": i,
-            "fund_code": f"{random.choice(['00', '11', '22'])}{random.randint(10000, 99999)}",
-            "fund_name": f"基金{fake.word()}",
-            "fund_short_name": fake.word(),
-            "fund_type": random.choice(list(FundType.__members__.values())),
-            "fund_regulatory_type": random.choice(list(FundRegulatoryType.__members__.values())),
-            "fund_manager_person_id": random.choice(person_ids) if person_ids else None,
-            "fund_manager_id": random.choice(manager_ids),
-            "fund_management_type": random.choice(list(FundManagementType.__members__.values())),
-            "fund_custodian": fake.company(),
-            "fund_registration_address": fake.address(),
-            "establishment_date": start_date,
-            "registration_date": start_date,
-            "status": random.choice(list(FundStatus.__members__.values())),
-        })
+
+    for family_idx, (base_name, fund_type, share_classes) in enumerate(families):
+        code_prefix = code_prefixes[family_idx % len(code_prefixes)]
+        base_num = random.randint(1000, 9999)
+
+        parent_code: Optional[str] = None
+        for sc_idx, sc in enumerate(share_classes):
+            start_date = fake.date_between(start_date="-10y", end_date="-1y")
+            if parent_code is None:
+                establishment = start_date
+                registration = start_date
+            else:
+                establishment = start_date + timedelta(days=random.randint(30, 365))
+                registration = establishment
+
+            # 公募基金代码为6位数字，同一家族的不同份额使用连续编号
+            fund_code = f"{code_prefix}{base_num + sc_idx:04d}"
+
+            funds.append({
+                "id": fund_id,
+                "fund_code": fund_code,
+                "fund_name": f"{base_name}{sc.label}",
+                "fund_short_name": f"{base_name}{sc.name}",
+                "fund_type": fund_type,
+                "fund_regulatory_type": FundRegulatoryType.Public,
+                "fund_manager_person_id": random.choice(person_ids) if person_ids else None,
+                "fund_manager_id": random.choice(manager_ids),
+                "fund_management_type": FundManagementType.Trust,
+                "fund_custodian": fake.company(),
+                "fund_registration_address": fake.address(),
+                "establishment_date": establishment,
+                "registration_date": registration,
+                "status": FundStatus.Active,
+                "share_class": sc,
+                "parent_fund_code": parent_code,
+            })
+            if parent_code is None:
+                parent_code = fund_code  # A 类成为后续份额的父基金
+            fund_id += 1
+
     return funds
 
 
@@ -356,6 +413,8 @@ def _build_tags_fields(table_name: str, row: Dict[str, Any]) -> Tuple[Dict[str, 
                 row.get("fund_regulatory_type", "")),
             "fund_manager_id": str(row["fund_manager_id"]) if row.get("fund_manager_id") else "",
             "status": str(row["status"].value) if hasattr(row.get("status"), "value") else str(row.get("status", "")),
+            "share_class": str(row["share_class"].value) if hasattr(row.get("share_class"), "value") else str(
+                row.get("share_class", "")),
         }
         fields = {
             "fund_name": row.get("fund_name", ""),
@@ -366,6 +425,7 @@ def _build_tags_fields(table_name: str, row: Dict[str, Any]) -> Tuple[Dict[str, 
             "establishment_date": row["establishment_date"].isoformat() if isinstance(row.get("establishment_date"),
                                                                                       date) else str(
                 row.get("establishment_date", "")),
+            "parent_fund_code": row.get("parent_fund_code", ""),
         }
 
     elif table_name == "fund_nav":
