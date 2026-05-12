@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-__all__ = ["create_filter_class", "create_search_class"]
+__all__ = [
+    "create_filter_class", "create_search_class"
+]
 
-import typing
 from datetime import date, datetime
-from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union, Set
+from typing import Any, Dict, List, Optional, Set, Type, get_origin, get_args, Union, get_type_hints, Tuple, Literal
 
 from pydantic import Field, create_model
 from sqlalchemy import Boolean, Date, DateTime, Integer, String, Text, ColumnElement
@@ -12,20 +13,27 @@ from sqlalchemy.orm import InstrumentedAttribute, Mapped
 from sqlalchemy.sql.sqltypes import Enum as SQLEnum
 
 from fund_nav_mcp.models.orm import Base
-from fund_nav_mcp.models.pydantic import BaseFilter, BaseSearchByKeyword, SearchField, BaseSearchByFields, FilterField
+from fund_nav_mcp.models.pydantic import BaseFilter, FilterField, BaseSearchByKeyword, SearchField, BaseSearchByFields
 from fund_nav_mcp.utils.log import get_logger
 
 logger = get_logger(__name__)
 
 
-def _extract_py_type_from_annotation(raw_type, col_type=None):
+def _extract_py_type_from_annotation(raw_type: type, col_type: Optional[type] = None) -> Optional[type]:
     """
     解析注解并可选地校验枚举兼容性。
     如果 col_type 不为 None，且提取出的类型是枚举，则做兼容性检查，
     不兼容时返回常规 Python 类型。
+
+    Args:
+        raw_type: 原始类型注解
+        col_type: SQLAlchemy 列对象的类型注解，用于校验枚举兼容性
+
+    Returns:
+        解析后的 Python 类型，或 None 表示无法解析
     """
-    origin = typing.get_origin(raw_type)
-    args = typing.get_args(raw_type)
+    origin = get_origin(raw_type)
+    args = get_args(raw_type)
 
     # 剥离 Mapped / Optional
     if origin is Mapped and args:
@@ -53,9 +61,15 @@ def _extract_py_type_from_annotation(raw_type, col_type=None):
 def _safe_column_python_type(col: InstrumentedAttribute) -> type:
     """
     安全获取列对应的 Python 类型。
-    - 枚举返回枚举类
-    - 常见 SQLAlchemy 类型做显式映射
-    - 失败返回 Any
+        - 枚举返回枚举类
+        - 常见 SQLAlchemy 类型做显式映射
+        - 失败返回 Any
+
+    Args:
+        col: SQLAlchemy 列对象
+
+    Returns:
+        Python 类型
     """
     col_type = getattr(col, "type", None)
     if col_type is not None:
@@ -71,14 +85,13 @@ def _safe_column_python_type(col: InstrumentedAttribute) -> type:
     # noinspection PyBroadException
     try:
         model_cls = col.class_  # 获取声明该属性的模型类
-        _annotations = typing.get_type_hints(model_cls, include_extras=True)
+        _annotations = get_type_hints(model_cls, include_extras=True)
         raw_type = _annotations.get(col.key, None)
         if raw_type is not None and isinstance(raw_type, type):
             extracted = _extract_py_type_from_annotation(raw_type)
-            if extracted is not None:
+            if extracted is not None and issubclass(extracted, SQLEnum):
                 # 仅当提取的类型是 Integer/BigInteger/SmallInteger/String/Text + Enum 子类，且与列存储兼容时才返回
-                if extracted is not None and issubclass(extracted, SQLEnum):
-                    return extracted
+                return extracted
     except Exception:
         pass
 
@@ -113,10 +126,15 @@ def _selected_model_columns(
         text_only: bool = False,
 ) -> Dict[str, InstrumentedAttribute]:
     """
-    从模型中选择列：
-    - include 不为空时：只取白名单
-    - include 为空时：取全部列，排除 exclude 和自增主键
-    - text_only=True 时：只保留 String/Text 列
+    从模型中选择列。
+
+    Args:
+        - model: 模型类
+        - include: 白名单列名（可选）
+        - exclude: 黑名单列名（可选）
+        - text_only: 是否仅保留 String/Text 列（默认 False）
+    Returns:
+        - 选中的列名到 InstrumentedAttribute 映射
     """
     selected: Dict[str, InstrumentedAttribute] = {}
     table_columns = list(getattr(model.__table__, "columns", []))
@@ -208,12 +226,23 @@ def _check_field_conflicts(
 def _bind_property_value(cls: type, name: str, value: Any) -> None:
     """
     给类绑定一个只读 property，避免可变默认值问题。
+
+    Args:
+        - cls: 类
+        - name: 属性名
+        - value: 属性值
     """
     setattr(cls, name, property(lambda self, v=value: v))
 
 
 def _drop_abstract_methods(cls: type, *method_names: str) -> None:
-    """移除指定方法名。"""
+    """
+    移除指定方法名的抽象方法。
+
+    Args:
+        - cls: 类
+        - method_names: 要移除的抽象方法名。
+    """
     abstract_name = "__abstractmethods__"  # noqa
     abstract_methods = frozenset(getattr(cls, abstract_name, frozenset()))
     setattr(cls, abstract_name, abstract_methods - frozenset(method_names))

@@ -1,13 +1,8 @@
 __all__ = ['FundCategory', 'FundCategoryMapping']
 
-from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import (
-    Integer, String, DateTime,
-    Text, UniqueConstraint,
-    ForeignKeyConstraint, Index, text
-)
+from sqlalchemy import Integer, String, Text, UniqueConstraint, ForeignKeyConstraint, Index
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 
 from fund_nav_mcp.models.orm.base import Base

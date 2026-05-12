@@ -2,11 +2,7 @@ __all__ = ['Fund', 'FundNav', 'FundReturn', 'FundHolding']
 
 from typing import List, TYPE_CHECKING, Optional
 
-from sqlalchemy import (
-    Integer, String, Date, DateTime,
-    DECIMAL, UniqueConstraint,
-    ForeignKeyConstraint, Index, text
-)
+from sqlalchemy import Integer, String, Date, DECIMAL, UniqueConstraint, ForeignKeyConstraint, Index
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 
 from fund_nav_mcp.models.orm.base import Base
