@@ -136,6 +136,43 @@ class DBManager(RdbmsDBManager):
             await session.commit()
             return result
 
+    async def insert(self, obj: Base) -> Base:
+        """
+        插入单条 ORM 模型实例。
+
+        Args:
+            obj: ORM 模型实例（Base 子类）
+
+        Returns:
+            传入的对象（commit 后已包含 DB 生成的值，如自增 ID）
+        """
+        if self._session_factory is None:
+            raise RuntimeError("数据库未连接，请先调用 connect()")
+        async with self._session_factory() as session:
+            session.add(obj)
+            await session.commit()
+            await session.refresh(obj)
+            return obj
+
+    async def insert_batch(self, objs: List[Base]) -> List[Base]:
+        """
+        批量插入 ORM 模型实例。
+
+        Args:
+            objs: ORM 模型实例列表
+
+        Returns:
+            传入的对象列表（commit 后每个对象已包含 DB 生成的值）
+        """
+        if self._session_factory is None:
+            raise RuntimeError("数据库未连接，请先调用 connect()")
+        async with self._session_factory() as session:
+            session.add_all(objs)
+            await session.commit()
+            for obj in objs:
+                await session.refresh(obj)
+            return objs
+
     async def get_all_tables(self) -> List[str]:
         """
         获取所有表名
@@ -451,7 +488,7 @@ class ManagerType(TypedDict):
     db_type: str
 
 
-class DbManagerResult(ManagerType):
+class DBManagerResult(ManagerType):
     mgr: DBManager
 
 
@@ -465,7 +502,7 @@ _manager_cache: Dict[Literal["db", "cache"], Dict[str, ManagerType]] = {}
 @overload
 async def get_manager(
         _class: Literal["db"], db_name: str
-) -> DbManagerResult: ...
+) -> DBManagerResult: ...
 
 
 @overload

@@ -1,3 +1,53 @@
+## [0.10.0] 2026-05-13
+
+### Added
+
+- **通用数据添加处理器**：新增 [`handlers/add_handlers.py`](fund_nav_mcp/handlers/add_handlers.py) 中的 `AddHandler` 类，支持单条及批量记录添加。
+  - 自动解析外键 `code` → `id`（如 `fund_code` → `fund_id`），调用方无需提供内部 ID。
+  - 无 `code` 时支持名称字段兜底解析（如 `manager_name` → `manager_code` → `fund_manager_id`）。
+  - 对模型自有 `code` 字段（如 `fund_code`）进行输入重复及数据库唯一性校验。
+  - 提供 `handle` / `handle_batch` 方法，统一集成至现有数据库管理器。
+
+- **MCP 添加工具集**：新增 [`tools/add_tools.py`](fund_nav_mcp/tools/add_tools.py)，为 `Fund`、`FundManager`、`FundManagerPerson`、`FundCategory`、`FundCategoryMapping`、`FundNav`、`FundReturn`、`FundHolding` 等 8 种实体生成添加工具。
+  - 每个实体对应单条添加 `add_*` 和批量添加 `add_*s` 两个工具。
+  - 所有工具均基于 `AddHandler` 实现，对外统一使用业务 `code` 字段。
+
+- **数据库管理器批量插入能力**：在 [`db/core.py`](fund_nav_mcp/db/core.py) 的 `DBManager` 中新增：
+  - `insert(obj: Base) -> Base`：插入单条 ORM 实例并刷新（获得自增 ID 等数据库生成值）。
+  - `insert_batch(objs: List[Base]) -> List[Base]`：批量插入并逐个刷新实例。
+
+- **份额类别模型及校验**：在 [`models/pydantic/fund.py`](fund_nav_mcp/models/pydantic/fund.py) 中增加：
+  - `ShareClass` 枚举与 `ShareClassDescription` 描述类，支持按基金类型/监管类型返回份额类别详细说明。
+  - `FundBase.share_class` 字段及 `share_class_description` 计算属性。
+  - 根据监管类型（公募/私募）校验份额类别的合理性（如公募分级基金仅允许 A/B 类）。
+  - `parent_fund_code` 字段，支持基金层级关系（母子基金）。
+
+- **完整字段校验器**：为所有 Pydantic Create 模型添加字段级与模型级校验器：
+  - 基金代码格式校验（公募 6 位数字，私募允许特定模式）。
+  - 日期逻辑校验（成立日≤备案日，净值/计算/报告日期不晚于今日）。
+  - 数值范围校验（单位净值>0，持仓比例 0~1，排名≤同类总数，实缴比例 0~100）。
+  - 统一社会信用代码、中基协登记编号格式校验。
+  - 名称字段自动去除首尾空白，空值统一处理为 `None`。
+
+### Changed
+
+- **外键字段改为业务 code**：将所有 Pydantic Create 模型中的外键 ID 字段（如 `fund_id`、`manager_id`）替换为对应的业务 code 字段（如 `fund_code`、`manager_code`），并增加名称字段（`manager_name`、`manager_person_name`）用于兜底解析。
+  - 受影响的模型：[`FundCreate`、`FundNavCreate`、`FundReturnCreate`、`FundHoldingCreate`、`FundCategoryCreate`、`FundCategoryMappingCreate`、`FundManagerPersonCreate`](fund_nav_mcp/models/pydantic/fund.py)。
+  - 响应模型（`*Response`）同时保留 ID 和 code 字段，并通过 `computed_field` 增加份额类别说明。
+- **DBManager 扩展现有接口**：[`DBManager`](fund_nav_mcp/db/core.py) 新增 `insert`/`insert_batch` 提供更便捷的 ORM 持久化方式。
+
+- **份额描述缓存优化**：[`ShareClassDescription._descriptions`](fund_nav_mcp/models/pydantic/fund.py) 中 使用 `@lru_cache` 确保全量定义仅构造一次，`get_description` 实现精确匹配 → 私募匹配 → 公募类型匹配 → 通用匹配的四级降级策略。
+
+## [0.9.3] 2026-05-12
+
+### Added
+
+- **Fund ORM 模型字段增加**: 为 [`Fund`](fund_nav_mcp/models/orm/fund.py) ORM 模型增加 share_class 与 parent_fund_id 字段，分别用于表示基金的份额类和父基金 ID。
+
+### Changed
+
+- **完善处理类和工具方法注释**：完善 [`ForeignKeyDisplayHandler`](fund_nav_mcp/handlers/query_handlers.py) 类的注释，添加外键字段映射关系的说明。
+
 ## [0.9.2] 2026-05-11
 
 ### Added
@@ -67,7 +117,7 @@
 
 - **显式升降序选择**：在 [`BaseFilter`](fund_nav_mcp/models/pydantic/filter.py) 中新增 `sort_by` 字段，支持显式指定排序字段和方向。
 - **枚举解析增强**：在 [`_BaseIntEnum`](fund_nav_mcp/utils/enums.py) 基类中新增 `_resolver` 方法，支持通过整数值、`label` 或大小写不敏感的名称查找枚举成员。`FundStatus` 等枚举的 `_missing_` 方法已采用该解析器，提高对字符串输入的兼容性。
-- **列表筛选支持**：[`_execute_paginated_query`](fund_nav_mcp/tools/fund_tools.py) 新增对 Filter 中 `*_list` 后缀字段的自动处理，字段值若为列表则生成 `IN` 查询条件，方便批量筛选。
+- **列表筛选支持**：[`_execute_paginated_query`](fund_nav_mcp/tools/query_tools.py) 新增对 Filter 中 `*_list` 后缀字段的自动处理，字段值若为列表则生成 `IN` 查询条件，方便批量筛选。
 - **字段冲突检测**：新增 [`_check_field_conflicts`](fund_nav_mcp/models/pydantic/builder.py)，自动检测 Filter/Search 生成时的字段名冲突，并支持 `suppress_warnings` 参数控制警告输出。
 
 ### Changed
@@ -101,7 +151,7 @@
     - 新增 [`FundManagerPersonFilter`](fund_nav_mcp/models/pydantic/filter.py) 筛选模型，支持性别、学历、从业资格、出生日期区间、所属公司等精确筛选及排序。
     - 新增 [`FundManagerPersonSearchByKeyword`](fund_nav_mcp/models/pydantic/search.py) 关键词搜索模型，一键搜索姓名、学历、资格证号、履历及关联公司名称。
     - 新增 [`FundManagerPersonSearchByFields`](fund_nav_mcp/models/pydantic/search.py) 高级字段搜索模型，支持字段级精确/模糊控制与 AND/OR 切换。
-    - 新增 [`get_fund_manager_person_list`](fund_nav_mcp/tools/fund_tools.py)、[`search_persons_by_keyword`](fund_nav_mcp/tools/fund_tools.py)、[`search_persons_by_fields`](fund_nav_mcp/tools/fund_tools.py) 三个工具，覆盖基金经理个人维度的列表、关键词搜索及高级组合搜索。
+    - 新增 [`get_fund_manager_person_list`](fund_nav_mcp/tools/query_tools.py)、[`search_persons_by_keyword`](fund_nav_mcp/tools/query_tools.py)、[`search_persons_by_fields`](fund_nav_mcp/tools/query_tools.py) 三个工具，覆盖基金经理个人维度的列表、关键词搜索及高级组合搜索。
 
 - **通用查询辅助函数**：
     - 新增 `_execute_paginated_query` 内部函数，统一处理筛选、搜索模型的分页查询逻辑，消除工具函数间的重复代码。
@@ -122,7 +172,7 @@
     - 新增 [`FundManagerFilter`](fund_nav_mcp/models/pydantic/filter.py) 筛选模型，支持规模区间、会员状态、登记日期区间及排序。
     - 新增 [`FundManagerSearchByKeyword`](fund_nav_mcp/models/pydantic/search.py) 关键词搜索模型，一键搜索公司全称、简称、统一代码、登记编号等文本字段。
     - 新增 [`FundManagerSearchByFields`](fund_nav_mcp/models/pydantic/search.py) 高级字段搜索模型，支持字段级精确/模糊控制和 AND/OR 切换。
-    - 新增 [`get_manager_list`](fund_nav_mcp/tools/fund_tools.py)、[`search_managers_by_keyword`](fund_nav_mcp/tools/fund_tools.py)、[`search_managers_by_fields`](fund_nav_mcp/tools/fund_tools.py) 三个工具，提供管理人维度的查询能力。
+    - 新增 [`get_manager_list`](fund_nav_mcp/tools/query_tools.py)、[`search_managers_by_keyword`](fund_nav_mcp/tools/query_tools.py)、[`search_managers_by_fields`](fund_nav_mcp/tools/query_tools.py) 三个工具，提供管理人维度的查询能力。
 
 ### Changed
 
@@ -148,8 +198,8 @@
     - 新增 [`FundSearchByFields`](fund_nav_mcp/models/pydantic/search.py) 字段组合搜索模型，支持 AND/OR 逻辑切换、全局及字段级精确/模糊匹配。
     - 新增 [`SearchField`](fund_nav_mcp/models/pydantic/search.py) 通用搜索字段，允许客户端传入简写字符串（默认模糊）或完整对象（自定义模式）。
 - **基金列表工具**：
-    - [`get_fund_list`](fund_nav_mcp/tools/fund_tools.py) 作为筛选工具，配合 `FundFilter` 使用。
-    - [`search_funds_by_keyword`](fund_nav_mcp/tools/fund_tools.py) 和 [`search_funds_by_fields`](fund_nav_mcp/tools/fund_tools.py) 分别处理关键词与高级组合搜索。
+    - [`get_fund_list`](fund_nav_mcp/tools/query_tools.py) 作为筛选工具，配合 `FundFilter` 使用。
+    - [`search_funds_by_keyword`](fund_nav_mcp/tools/query_tools.py) 和 [`search_funds_by_fields`](fund_nav_mcp/tools/query_tools.py) 分别处理关键词与高级组合搜索。
 
 ### Changed
 
