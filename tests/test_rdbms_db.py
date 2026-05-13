@@ -1,7 +1,7 @@
 import random
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Dict, Any, Union, AsyncGenerator
+from typing import Dict, Any, Union
 
 import pytest
 from faker import Faker
@@ -126,27 +126,6 @@ async def build_row_data(db: DBManager, table_name: str) -> Dict[str, Any]:
     data = generate_fake_data(table_name)
     data.update(await ensure_dependencies(db, table_name))
     return data
-
-
-@pytest.fixture(params=["sqlite", "sqlite_file", "mysql", "postgresql"])
-async def db_manager(request, db_urls: Dict[str, str]) -> AsyncGenerator[DBManager, Any]:
-    """
-    数据库管理器 fixture，用于测试数据库连接和断开
-
-    Args:
-        request: pytest 请求对象
-        db_urls: 数据库 URL 映射
-
-    Returns:
-        数据库管理器实例
-    """
-    db_name = request.param
-    mgr = DBManager(db_urls[db_name])
-    await mgr.connect()
-    await mgr.create_all()
-    yield mgr
-    await mgr.drop_all()
-    await mgr.disconnect()
 
 
 @pytest.fixture(params=["insert", "update", "delete", "fetch"])
