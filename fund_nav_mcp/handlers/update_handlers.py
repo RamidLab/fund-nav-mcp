@@ -2,7 +2,6 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Type
 
 from pydantic import BaseModel
-from sqlalchemy import select
 
 from fund_nav_mcp.db.core import get_manager
 from fund_nav_mcp.handlers.base_handlers import CodeResolveMixin
@@ -19,104 +18,6 @@ class UpdateHandler(CodeResolveMixin):
     然后仅将更新 Pydantic 模型中非 None 的字段应用到数据库。
     外键编码 → id 以及名称 → id 的解析能力继承自 CodeResolveMixin。
     """
-
-    async def _check_own_codes_unique_for_update(
-            self,
-            orm_model: Type[Base],
-            target_id: int,
-            update_fields: Dict[str, Any],
-            db_name: str,
-    ) -> None:
-        """
-        检查更新数据中的自有编码字段是否与其他记录冲突（排除当前记录）。
-
-        参照 AddHandler._check_own_codes_unique，但将当前记录 ID 排除在外，
-        允许将记录编码更新为与自身相同的值（幂等更新）。
-
-        Args:
-            orm_model: 目标 ORM 模型类。
-            target_id: 当前待更新记录的主键 id。
-            update_fields: 待更新的字段字典（已完成外键/名称解析）。
-            db_name: 数据库配置名称。
-
-        Raises:
-            ValueError: 当编码与数据库中其他记录冲突时。
-        """
-        own = self._OWN_CODE_FIELDS.get(orm_model, set())
-        if not own:
-            return
-        mgr = (await get_manager("db", db_name))["mgr"]
-
-        for code_field, (_, model, lookup_col) in self._CODE_RESOLVE_MAP.items():
-            if code_field not in own:
-                continue
-            new_val = update_fields.get(code_field)
-            if not isinstance(new_val, str):
-                continue
-
-            # 查询是否有其他记录已使用此编码
-            stmt = select(model.id, getattr(model, lookup_col)).where(
-                getattr(model, lookup_col) == new_val.strip(),
-                model.id != target_id,
-            )
-            row = await mgr.fetch_one(stmt)
-            if row:
-                raise ValueError(
-                    f"更新失败：{code_field}='{new_val}' 已被其他记录使用 (id={row['id']})。"
-                )
-
-    async def _resolve_record_id(
-            self,
-            orm_model: Type[Base],
-            record_id: Optional[int],
-            raw: Dict[str, Any],
-            db_name: str,
-    ) -> int:
-        """
-        解析待更新记录的主键 id。
-
-        解析顺序：
-        1. 直接使用 *record_id*。
-        2. 使用 *raw* 中包含的自身编码字段（例如 ``fund_code``）。
-
-        Args:
-            orm_model: 目标 ORM 模型类。
-            record_id: 主键 id，可直接指定。
-            raw: 从请求数据中提取的字段字典（可能包含编码字段）。
-            db_name: 数据库配置名称。
-
-        Returns:
-            解析出的整数主键 id。
-        """
-        if record_id is not None:
-            mgr = (await get_manager("db", db_name))["mgr"]
-            stmt = select(orm_model.id).where(orm_model.id == record_id)
-            row = await mgr.fetch_one(stmt)
-            if row is None:
-                raise ValueError(f"{orm_model.__tablename__} 表中未找到 id={record_id} 的记录。")
-            return record_id
-
-        own = self._OWN_CODE_FIELDS.get(orm_model, set())
-        for code_field, (_, _model, lookup_col) in self._CODE_RESOLVE_MAP.items():
-            if code_field not in own:
-                continue
-            cv = raw.get(code_field)
-            if not isinstance(cv, str):
-                continue
-            mgr = (await get_manager("db", db_name))["mgr"]
-            stmt = select(orm_model.id).where(
-                getattr(orm_model, lookup_col) == cv.strip()
-            )
-            row = await mgr.fetch_one(stmt)
-            if row is None:
-                raise ValueError(
-                    f"{orm_model.__tablename__} 表中未找到 {code_field}='{cv}' 的记录。"
-                )
-            return row["id"]
-
-        raise ValueError(
-            f"无法识别 {orm_model.__tablename__} 记录：请提供 `record_id` 或唯一的业务编码字段。"
-        )
 
     async def handle(
             self,
@@ -163,7 +64,7 @@ class UpdateHandler(CodeResolveMixin):
         final = resolved_list[0]
 
         # 校验自有编码不与数据库中其他记录冲突
-        await self._check_own_codes_unique_for_update(orm_model, target_id, final, db_name)
+        await self._check_own_codes_unique(orm_model, [final], db_name, exclude_id=target_id)
 
         final["updated_at"] = datetime.now()
 
@@ -210,7 +111,7 @@ class UpdateHandler(CodeResolveMixin):
 
         # 校验自有编码不与数据库中其他记录冲突
         for rid, fields in zip(ids, resolved):
-            await self._check_own_codes_unique_for_update(orm_model, rid, fields, db_name)
+            await self._check_own_codes_unique(orm_model, [fields], db_name, exclude_id=rid)
 
         now = datetime.now()
         for fields in resolved:

@@ -199,6 +199,47 @@ class DBManager(RdbmsDBManager):
             await session.refresh(instance)
             return instance
 
+    async def delete_by_id(self, model: Type[Base], record_id: int) -> None:
+        """
+        按主键删除单条 ORM 记录。
+
+        Args:
+            model: ORM 模型类。
+            record_id: 主键 id。
+        """
+        if self._session_factory is None:
+            raise RuntimeError("数据库未连接，请先调用 connect()")
+        async with self._session_factory() as session:
+            instance = await session.get(model, record_id)
+            if instance is None:
+                raise ValueError(f"{model.__tablename__} 表中未找到 id={record_id} 的记录。")
+            await session.delete(instance)
+            await session.commit()
+
+    async def delete_batch_by_ids(self, model: Type[Base], ids: List[int]) -> int:
+        """
+        按主键批量删除 ORM 记录。
+
+        Args:
+            model: ORM 模型类。
+            ids: 主键 id 列表。
+
+        Returns:
+            实际删除的记录数。
+        """
+        if self._session_factory is None:
+            raise RuntimeError("数据库未连接，请先调用 connect()")
+        if not ids:
+            return 0
+        async with self._session_factory() as session:
+            stmt = select(model).where(model.id.in_(ids))
+            result = await session.execute(stmt)
+            instances = result.scalars().all()
+            for instance in instances:
+                await session.delete(instance)
+            await session.commit()
+            return len(instances)
+
     async def update_batch_by_ids(
             self, model: Type[Base], ids: List[int], values_list: List[Dict[str, Any]],
     ) -> List[int]:

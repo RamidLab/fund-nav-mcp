@@ -2,7 +2,8 @@ from __future__ import annotations
 
 __all__ = [
     "FundValidators", "FundNavValidators", "FundReturnValidators", "FundHoldingValidators",
-    "FundManagerValidators", "FundManagerPersonValidators", "FundCategoryValidators"
+    "FundManagerValidators", "FundManagerPersonValidators", "FundCategoryValidators",
+    "FundCategoryMappingValidators",
 ]
 
 import re
@@ -440,3 +441,21 @@ class FundCategoryValidators:
         if lv is not None and lv == 1 and parent is not None:
             raise ValueError("一级分类不应设置父级分类代码")
         return self
+
+
+class FundCategoryMappingValidators:
+    """FundCategoryMapping 模型通用字段校验器 Mixin。
+
+    校验基金代码与分类代码非空，去除首尾空白。
+    """
+
+    @field_validator("fund_code", "category_code")
+    @classmethod
+    def _strip_code(cls, v: Optional[str]) -> Optional[str]:
+        """去除代码空白，要求非空。None 值直接返回。"""
+        if v is None:
+            return v
+        code = v.strip()
+        if not code:
+            raise ValueError("关联代码不能为空白")
+        return code

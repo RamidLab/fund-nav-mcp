@@ -1,3 +1,32 @@
+## [0.12.0] 2026-05-13
+
+### Added
+
+- **DeleteHandler 通用删除处理器**：新增 [`DeleteHandler`](fund_nav_mcp/handlers/delete_handlers.py)，实现 ORM 删除逻辑，支持单条及批量删除。定位策略丰富：`record_id`、自有编码字段、额外编码（如统一社会信用代码）、复合字段（`fund_code`+`nav_date` 等）、名称多策略定位。包含同名记录歧义检测与候选项提示。
+
+- **MCP 删除工具集**：新增 [`delete_tools`](fund_nav_mcp/tools/delete_tools.py)，提供 18 个删除工具，覆盖 `Fund`、`FundManager`、`FundManagerPerson`、`FundCategory`、`FundCategoryMapping`、`FundNav`、`FundReturn`、`FundHolding` 各模型，均提供单条和批量删除接口。
+
+- **DBManager 删除方法**：在 [`core`](fund_nav_mcp/db/core.py) 的 `DBManager` 中新增 `delete_by_id()`（按主键删除单条）和 `delete_batch_by_ids()`（按主键列表批量删除）。
+
+- **Pydantic 删除模型**：新增 [`FundDelete`、`FundNavDelete`、`FundReturnDelete`、`FundHoldingDelete`、`FundManagerDelete`、`FundManagerPersonDelete`、`FundCategoryDelete`、`FundCategoryMappingDelete`](fund_nav_mcp/models/pydantic/fund.py)，均包含联合必填校验（如多个定位字段至少提供一个）及字符串自动去空白。
+
+- **FundCategoryMappingValidators**：新增 [`fund_validators`](fund_nav_mcp/models/pydantic/fund_validators.py) 中的校验 Mixin，统一处理分类映射相关代码字段的空白校验。
+
+### Changed
+
+- **CodeResolveMixin 增强**：在 [`base_handlers`](fund_nav_mcp/handlers/base_handlers.py) 中提升 `_check_own_codes_unique`（新增 `exclude_id` 参数，支持更新时排除自身 ID）和 `_resolve_record_id` 为共享方法；`_find_code_col` 增加对字典类型行的支持，完善文档注释。
+
+- **AddHandler 简化**：移除内联的 `_check_own_codes_unique` 方法，改为继承 `CodeResolveMixin` 的共享实现。
+
+- **UpdateHandler 简化**：移除内联的 `_check_own_codes_unique_for_update` 和 `_resolve_record_id` 方法，改为继承 `CodeResolveMixin` 的共享实现。
+
+- **FundCategoryMappingBase 重构**：将字段校验逻辑从 `FundCategoryMappingBase` 迁移至 `FundCategoryMappingValidators` Mixin，保持校验行为不变。
+
+### Removed
+
+- 移除 `handlers/add_handlers.py` 中重复的 `_check_own_codes_unique` 方法。
+- 移除 `handlers/update_handlers.py` 中重复的 `_check_own_codes_unique_for_update` 和 `_resolve_record_id` 方法。
+
 ## [0.11.0] 2026-05-13
 
 ### Added
@@ -31,13 +60,6 @@
 
 - **模块导出更新**：`handlers/__init__.py` 增加 `UpdateHandler` 导出，与 `AddHandler`、`QueryHandler` 并列。
 
-### Fixed
-
-- 无。
-
-### Removed
-
-- 无。
 ## [0.10.2] 2026-05-13
 
 ### Added

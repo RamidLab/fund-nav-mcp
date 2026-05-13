@@ -663,8 +663,6 @@ class LoggingManager:
         Args:
             **kwargs: 支持的参数包括 level, console, file, file_path,
                       backup_count, max_file_size, json_format。
-        Raises:
-            RuntimeError: 如果日志已经启动（configure 只能调用一次）。
         """
         if self._started:
             raise RuntimeError("Logging already started, cannot reconfigure")
