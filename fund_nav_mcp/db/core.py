@@ -173,6 +173,64 @@ class DBManager(RdbmsDBManager):
                 await session.refresh(obj)
             return objs
 
+    async def update_by_id(
+            self, model: Type[Base], record_id: int, values: Dict[str, Any],
+    ) -> type[Base]:
+        """
+        按主键更新单条 ORM 记录。
+
+        Args:
+            model: ORM 模型类。
+            record_id: 主键 id。
+            values: 待更新的字段 → 值字典。
+
+        Returns:
+            更新并刷新后的 ORM 实例。
+        """
+        if self._session_factory is None:
+            raise RuntimeError("数据库未连接，请先调用 connect()")
+        async with self._session_factory() as session:
+            instance = await session.get(model, record_id)
+            if instance is None:
+                raise ValueError(f"{model.__tablename__} 表中未找到 id={record_id} 的记录。")
+            for field, value in values.items():
+                setattr(instance, field, value)
+            await session.commit()
+            await session.refresh(instance)
+            return instance
+
+    async def update_batch_by_ids(
+            self, model: Type[Base], ids: List[int], values_list: List[Dict[str, Any]],
+    ) -> List[int]:
+        """
+        按主键批量更新 ORM 记录。
+
+        Args:
+            model: ORM 模型类。
+            ids: 主键 id 列表。
+            values_list: 与 *ids* 顺序对应的更新字段字典列表。
+
+        Returns:
+            更新成功的 id 列表。
+        """
+        if self._session_factory is None:
+            raise RuntimeError("数据库未连接，请先调用 connect()")
+        if len(ids) != len(values_list):
+            raise ValueError(
+                f"更新数量不匹配：{len(ids)} 个 ID 与 {len(values_list)} 条数据不一致。"
+            )
+        async with self._session_factory() as session:
+            updated_ids: List[int] = []
+            for rid, vals in zip(ids, values_list):
+                instance = await session.get(model, rid)
+                if instance is None:
+                    raise ValueError(f"{model.__tablename__} 表中未找到 id={rid} 的记录。")
+                for field, value in vals.items():
+                    setattr(instance, field, value)
+                updated_ids.append(rid)
+            await session.commit()
+            return updated_ids
+
     async def get_all_tables(self) -> List[str]:
         """
         获取所有表名

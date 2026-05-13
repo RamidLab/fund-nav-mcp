@@ -1,3 +1,43 @@
+## [0.11.0] 2026-05-13
+
+### Added
+
+- **通用更新处理器**：新增 [`handlers/update.py`](fund_nav_mcp/handlers/update_handlers.py)，实现 `UpdateHandler` 类，支持单条及批量更新。
+  - 通过 `record_id` 或模型自有编码字段（如 `fund_code`）精确定位记录。
+  - 仅更新请求中显式提供的非 `None` 字段，自动跳过空值。
+  - 复用 `CodeResolveMixin` 解析外键 `code` 和名称字段，更新前自动设置 `updated_at`。
+  - 提供 `handle` / `handle_batch` 方法，统一集成至数据库管理器。
+
+- **MCP 更新工具集**：新增 [`tools/update.py`](fund_nav_mcp/tools/update_tools.py)，为 `Fund`、`FundManager`、`FundManagerPerson`、`FundCategory`、`FundNav`、`FundReturn`、`FundHolding` 等 7 个实体生成更新工具。
+  - 每个实体对应单条更新 `update_*` 和批量更新 `update_*s` 两个工具。
+  - 支持通过 `record_id` 或业务 `code` 字段（如 `fund_code`）定位记录，对外隐藏内部主键 ID。
+
+- **数据库管理器更新能力**：在 [`db/core.py`](fund_nav_mcp/db/core.py) 的 `DBManager` 中新增：
+  - `update_by_id(model, record_id, values)`：按主键更新单条 ORM 记录，提交后刷新实例并返回。
+  - `update_batch_by_ids(model, ids, values_list)`：按主键列表批量更新，顺序匹配，返回成功更新的 ID 列表。
+
+- **字段校验器 Mixin 抽取**：新增 [`models/pydantic/fund_validators.py`](fund_nav_mcp/models/pydantic/fund_validators.py)，为各模型定义独立的校验器 Mixin 类：
+  - `FundValidators`：基金代码、名称、可选字段修剪。
+  - `FundNavValidators`：净值日期、单位净值正数、累计净值不小于单位净值。
+  - `FundReturnValidators`：排名与总数正数校验、排名不超过总数。
+  - `FundHoldingValidators`：持仓比例 0~1、金额/股数非负、日期不晚于今天。
+  - `FundManagerValidators`：统一信用代码、中基协编号格式、资本及人数逻辑校验。
+  - `FundManagerPersonValidators`：姓名、性别、出生日期校验。
+  - `FundCategoryValidators`：分类层级 ≥ 1，一级分类禁止父级代码。
+
+### Changed
+
+- **Pydantic 模型重构**：重构 [`models/pydantic/fund.py`](fund_nav_mcp/models/pydantic/fund.py)，所有 Create/Update 模型改为继承对应的 Mixin 类，移除原有的内联校验器定义，代码重复率显著降低，维护性提升。所有业务校验逻辑保持不变。
+
+- **模块导出更新**：`handlers/__init__.py` 增加 `UpdateHandler` 导出，与 `AddHandler`、`QueryHandler` 并列。
+
+### Fixed
+
+- 无。
+
+### Removed
+
+- 无。
 ## [0.10.2] 2026-05-13
 
 ### Added

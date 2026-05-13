@@ -19,9 +19,19 @@ from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
 
-from fund_nav_mcp.utils.enums import FundNavStatus, FundStatus, FundType, FundRegulatoryType, PeriodType, \
-    FundDataSource, FundManagementType, ManagementScaleRange, ShareClass
+from fund_nav_mcp.models.pydantic.fund_validators import (
+    FundValidators, FundNavValidators, FundReturnValidators, FundHoldingValidators,
+    FundManagerValidators, FundManagerPersonValidators, FundCategoryValidators,
+)
+from fund_nav_mcp.utils.enums import (
+    FundNavStatus, FundStatus, FundType, FundRegulatoryType, PeriodType,
+    FundDataSource, FundManagementType, ManagementScaleRange, ShareClass,
+)
 
+
+# ================================================================
+# ShareClassDescription
+# ================================================================
 
 class ShareClassDescription(BaseModel):
     """份额类别描述模型，集中管理描述数据与查询逻辑。"""
@@ -32,7 +42,7 @@ class ShareClassDescription(BaseModel):
     description: str
 
     @classmethod
-    @lru_cache(maxsize=None)  # 无限制缓存，仅构造一次
+    @lru_cache(maxsize=None)
     def _descriptions(cls) -> List[ShareClassDescription]:
         """返回所有份额描述定义（缓存，仅构建一次）。"""
         return [
@@ -171,21 +181,21 @@ class ShareClassDescription(BaseModel):
         return f"{share_class.label}份额"
 
 
-class FundBase(BaseModel):
+# ================================================================
+# Fund
+# ================================================================
+
+class FundBase(FundValidators, BaseModel):
 
     @staticmethod
     def _validate_fund_code(fund_code: str, regulatory_type: FundRegulatoryType) -> None:
-        """根据监管类型校验基金代码格式，格式不合法则 raise ValueError。"""
         code = fund_code.strip()
         if not code:
             raise ValueError("基金代码不能为空")
-
         if regulatory_type in (FundRegulatoryType.Public, FundRegulatoryType.PublicReit):
             if not re.match(r"^\d{6}$", code):
-                raise ValueError(
-                    f"公募基金代码必须为6位数字，当前值: '{code}'"
-                )
-        elif int(regulatory_type) >= 3:  # 私募类
+                raise ValueError(f"公募基金代码必须为6位数字，当前值: '{code}'")
+        elif int(regulatory_type) >= 3:
             if re.match(r"^[Ss]\d{5}$", code) or \
                     re.match(r"^[A-Za-z0-9]{9,15}$", code) or \
                     re.match(r"^P\d+$", code):
@@ -194,7 +204,7 @@ class FundBase(BaseModel):
                 raise ValueError(f"私募基金代码过短（至少2位），当前值: '{code}'")
             if any(c.isspace() for c in code):
                 raise ValueError("基金代码不允许包含空白字符")
-        else:  # Unknown — 不校验格式，仅检查基本合法性
+        else:
             if any(c.isspace() for c in code):
                 raise ValueError("基金代码不允许包含空白字符")
 
@@ -218,65 +228,27 @@ class FundBase(BaseModel):
     share_class: ShareClass = Field(default=ShareClass.NotApplicable, title="份额类别")
     parent_fund_code: Optional[str] = Field(default=None, max_length=20, title="父基金代码")
 
-    @field_validator("fund_code")
-    @classmethod
-    def _strip_and_validate_fund_code(cls, v: str) -> str:
-        """字段级：去除首尾空白。跨字段校验由 model_validator 完成。"""
-        return v.strip()
-
-    @field_validator("fund_name", "fund_short_name")
-    @classmethod
-    def _strip_name(cls, v: Optional[str]) -> Optional[str]:
-        if v is None:
-            return v
-        stripped = v.strip()
-        if not stripped:
-            raise ValueError("基金名称不能为空白")
-        return stripped
-
-    @field_validator("fund_custodian", "fund_registration_address",
-                     "parent_fund_code", "manager_code", "manager_person_code",
-                     "manager_name", "manager_person_name")
-    @classmethod
-    def _strip_optional_str(cls, v: Optional[str]) -> Optional[str]:
-        if v is None:
-            return v
-        return v.strip()
-
     @model_validator(mode="after")
     def _validate_fund_consistency(self) -> "FundBase":
-        # fund_code ↔ regulatory_type 交叉校验
         self._validate_fund_code(self.fund_code, self.fund_regulatory_type)
-
-        # 成立日期 ≤ 备案日期
         if self.establishment_date > self.registration_date:
             raise ValueError(
                 f"成立日期 ({self.establishment_date}) 不能晚于备案日期 ({self.registration_date})"
             )
-
-        # 份额类别：公募用于区分收费模式，私募用于区分结构化层级
-        # 仅在监管类型明确时校验
         if (self.share_class is not ShareClass.NotApplicable
                 and self.fund_regulatory_type is FundRegulatoryType.Unknown):
             raise ValueError(
                 f"设置了份额类别 ({self.share_class.label})，但监管类型未知，"
                 f"请指定正确的监管类型（公募/私募）"
             )
-
-        # 份额类别与基金类型的交叉校验
         self._validate_share_class()
-
         return self
 
     def _validate_share_class(self) -> None:
-        """校验份额类别与基金类型的兼容性。"""
         if self.share_class is ShareClass.NotApplicable:
             return
         if self.fund_type is None:
             return
-
-        # 公募分级基金一般只有 A/B 两类（优先级/进取），不设 C/D/E
-        # 私募基金不受此限制（C/D/E 可表示夹层级或其他层级）
         regulatory_is_public = (
                 self.fund_regulatory_type in (FundRegulatoryType.Public, FundRegulatoryType.PublicReit)
         )
@@ -298,7 +270,7 @@ class FundCreate(FundBase):
     pass
 
 
-class FundUpdate(BaseModel):
+class FundUpdate(FundValidators, BaseModel):
     fund_code: Optional[str] = Field(default=None, max_length=20, description='基金代码')
     fund_name: Optional[str] = Field(default=None, max_length=200, description='基金名称')
     fund_short_name: Optional[str] = Field(default=None, max_length=100, description='基金简称')
@@ -325,7 +297,6 @@ class FundResponse(FundBase):
     fund_manager_person_id: Optional[int] = None
     fund_manager_id: Optional[int] = None
     parent_fund_id: Optional[int] = None
-    # 关系字段
     manager: Optional[FundManagerResponse] = None
     manager_person: Optional[FundManagerPersonResponse] = None
     nav_records: List[FundNavResponse] = []
@@ -344,7 +315,11 @@ class FundResponse(FundBase):
         return ShareClassDescription.get_description(self.share_class, self.fund_type, self.fund_regulatory_type)
 
 
-class FundNavBase(BaseModel):
+# ================================================================
+# FundNav
+# ================================================================
+
+class FundNavBase(FundNavValidators, BaseModel):
     fund_code: str = Field(..., max_length=20, description='基金代码')
     nav_date: date = Field(..., description='净值日期')
     unit_nav: Decimal = Field(..., max_digits=10, decimal_places=4, description='单位净值')
@@ -354,42 +329,12 @@ class FundNavBase(BaseModel):
     nav_status: FundNavStatus = Field(..., description='净值状态')
     data_source: FundDataSource = Field(..., description='数据来源')
 
-    @field_validator("fund_code")
-    @classmethod
-    def _strip_fund_code(cls, v: str) -> str:
-        code = v.strip()
-        if not code:
-            raise ValueError("基金代码不能为空白")
-        return code
-
-    @field_validator("unit_nav")
-    @classmethod
-    def _positive_unit_nav(cls, v: Decimal) -> Decimal:
-        if v <= 0:
-            raise ValueError(f"单位净值必须大于0，当前值: {v}")
-        return v
-
-    @field_validator("nav_date")
-    @classmethod
-    def _nav_date_not_future(cls, v: date) -> date:
-        if v > date.today():
-            raise ValueError(f"净值日期不能晚于今天，当前值: {v}")
-        return v
-
-    @model_validator(mode="after")
-    def _validate_nav_consistency(self) -> "FundNavBase":
-        if self.acc_nav is not None and self.acc_nav < self.unit_nav:
-            raise ValueError(
-                f"累计净值 ({self.acc_nav}) 不能小于单位净值 ({self.unit_nav})"
-            )
-        return self
-
 
 class FundNavCreate(FundNavBase):
     pass
 
 
-class FundNavUpdate(BaseModel):
+class FundNavUpdate(FundNavValidators, BaseModel):
     fund_code: Optional[str] = Field(None, max_length=20, description='基金代码')
     nav_date: Optional[date] = Field(None, description='净值日期')
     unit_nav: Optional[Decimal] = Field(None, max_digits=10, decimal_places=4, description='单位净值')
@@ -404,13 +349,16 @@ class FundNavResponse(FundNavBase):
     id: int
     created_at: datetime
     fund_id: int
-    # 关系
     fund: Optional[FundResponse] = None
 
     model_config = ConfigDict(from_attributes=True)
 
 
-class FundReturnBase(BaseModel):
+# ================================================================
+# FundReturn
+# ================================================================
+
+class FundReturnBase(FundReturnValidators, BaseModel):
     fund_code: str = Field(..., max_length=20, description='基金代码')
     period_type: PeriodType = Field(..., description='周期类型')
     return_rate: Decimal = Field(..., max_digits=10, decimal_places=4, description='收益率')
@@ -418,49 +366,12 @@ class FundReturnBase(BaseModel):
     total_funds: int = Field(..., description='同类总数')
     calculation_date: date = Field(..., description='计算日期')
 
-    @field_validator("fund_code")
-    @classmethod
-    def _strip_fund_code(cls, v: str) -> str:
-        code = v.strip()
-        if not code:
-            raise ValueError("基金代码不能为空白")
-        return code
-
-    @field_validator("total_funds")
-    @classmethod
-    def _positive_total_funds(cls, v: int) -> int:
-        if v < 1:
-            raise ValueError(f"同类总数必须 ≥ 1，当前值: {v}")
-        return v
-
-    @field_validator("rank")
-    @classmethod
-    def _positive_rank(cls, v: int) -> int:
-        if v < 1:
-            raise ValueError(f"排名必须 ≥ 1，当前值: {v}")
-        return v
-
-    @field_validator("calculation_date")
-    @classmethod
-    def _calc_date_not_future(cls, v: date) -> date:
-        if v > date.today():
-            raise ValueError(f"计算日期不能晚于今天，当前值: {v}")
-        return v
-
-    @model_validator(mode="after")
-    def _validate_return_consistency(self) -> "FundReturnBase":
-        if self.rank > self.total_funds:
-            raise ValueError(
-                f"排名 ({self.rank}) 不能大于同类总数 ({self.total_funds})"
-            )
-        return self
-
 
 class FundReturnCreate(FundReturnBase):
     pass
 
 
-class FundReturnUpdate(BaseModel):
+class FundReturnUpdate(FundReturnValidators, BaseModel):
     fund_code: Optional[str] = Field(None, max_length=20, description='基金代码')
     period_type: Optional[PeriodType] = Field(None, description='周期类型')
     return_rate: Optional[Decimal] = Field(None, max_digits=10, decimal_places=4, description='收益率')
@@ -473,13 +384,16 @@ class FundReturnResponse(FundReturnBase):
     id: int
     created_at: datetime
     fund_id: int
-    # 关系
     fund: Optional[FundResponse] = None
 
     model_config = ConfigDict(from_attributes=True)
 
 
-class FundHoldingBase(BaseModel):
+# ================================================================
+# FundHolding
+# ================================================================
+
+class FundHoldingBase(FundHoldingValidators, BaseModel):
     fund_code: str = Field(..., max_length=20, description='基金代码')
     report_date: date = Field(..., description='报告日期')
     stock_code: str = Field(..., max_length=20, description='股票代码')
@@ -488,61 +402,12 @@ class FundHoldingBase(BaseModel):
     market_value: Decimal = Field(..., max_digits=15, decimal_places=2, description='市值（万元）')
     shares_held: Decimal = Field(..., max_digits=15, decimal_places=2, description='持股数量（万股）')
 
-    @field_validator("fund_code")
-    @classmethod
-    def _strip_fund_code(cls, v: str) -> str:
-        code = v.strip()
-        if not code:
-            raise ValueError("基金代码不能为空白")
-        return code
-
-    @field_validator("stock_code")
-    @classmethod
-    def _strip_stock_code(cls, v: str) -> str:
-        code = v.strip()
-        if not code:
-            raise ValueError("股票代码不能为空")
-        return code
-
-    @field_validator("stock_name")
-    @classmethod
-    def _strip_stock_name(cls, v: str) -> str:
-        name = v.strip()
-        if not name:
-            raise ValueError("股票名称不能为空")
-        return name
-
-    @field_validator("holding_ratio")
-    @classmethod
-    def _validate_holding_ratio(cls, v: Decimal) -> Decimal:
-        if v < 0 or v > 1:
-            raise ValueError(f"持仓比例必须在 0~1 之间，当前值: {v}")
-        return v
-
-    @field_validator("market_value", "shares_held")
-    @classmethod
-    def _non_negative(cls, v: Decimal) -> Decimal:
-        if v < 0:
-            raise ValueError(f"不得为负数，当前值: {v}")
-        return v
-
-    @field_validator("report_date")
-    @classmethod
-    def _report_date_not_future(cls, v: date) -> date:
-        if v > date.today():
-            raise ValueError(f"报告日期不能晚于今天，当前值: {v}")
-        return v
-
-    @model_validator(mode="after")
-    def _validate_holding_consistency(self) -> "FundHoldingBase":
-        return self
-
 
 class FundHoldingCreate(FundHoldingBase):
     pass
 
 
-class FundHoldingUpdate(BaseModel):
+class FundHoldingUpdate(FundHoldingValidators, BaseModel):
     fund_id: Optional[int] = Field(None, description='基金ID')
     fund_code: Optional[str] = Field(None, max_length=20, description='基金代码（与 fund_id 二选一）')
     report_date: Optional[date] = Field(None, description='报告日期')
@@ -557,13 +422,16 @@ class FundHoldingResponse(FundHoldingBase):
     id: int
     created_at: datetime
     fund_id: int
-    # 关系
     fund: Optional[FundResponse] = None
 
     model_config = ConfigDict(from_attributes=True)
 
 
-class FundManagerBase(BaseModel):
+# ================================================================
+# FundManager
+# ================================================================
+
+class FundManagerBase(FundManagerValidators, BaseModel):
     company_name: str = Field(..., max_length=100, description='公司全称')
     english_name: Optional[str] = Field(None, max_length=200, description='英文名称')
     short_name: Optional[str] = Field(None, max_length=50, description='公司简称')
@@ -584,95 +452,12 @@ class FundManagerBase(BaseModel):
     is_member: bool = Field(False, description='是否为会员')
     legal_representative: Optional[str] = Field(None, max_length=50, description='法定代表人')
 
-    @field_validator("company_name")
-    @classmethod
-    def _strip_company_name(cls, v: str) -> str:
-        name = v.strip()
-        if not name:
-            raise ValueError("公司全称不能为空")
-        return name
-
-    @field_validator("short_name", "organization_type", "business_type",
-                     "registered_address", "office_address", "actual_controller",
-                     "legal_representative", "english_name")
-    @classmethod
-    def _strip_optional_str(cls, v: Optional[str]) -> Optional[str]:
-        if v is None:
-            return v
-        return v.strip() or None
-
-    @field_validator("amac_registration_number")
-    @classmethod
-    def _strip_amac_number(cls, v: Optional[str]) -> Optional[str]:
-        if v is None:
-            return v
-        code = v.strip()
-        if not code:
-            raise ValueError("中基协登记编号不能为空白")
-        # 中基协登记编号常见格式：P开头+数字（如 P1001234）
-        if not re.match(r"^[Pp]\d{6,10}$", code):
-            raise ValueError(f"中基协登记编号格式无效，应为P+6-10位数字，当前值: '{code}'")
-        return code.upper()
-
-    @field_validator("unified_code")
-    @classmethod
-    def _validate_unified_code(cls, v: Optional[str]) -> Optional[str]:
-        """统一社会信用代码：18位字母数字组合（GB 32100-2015）"""
-        if v is None:
-            return v
-        code = v.strip().upper()
-        if not code:
-            return None
-        if not re.match(r"^[0-9A-HJ-NPQRTUWXY]{18}$", code):
-            raise ValueError(
-                f"统一社会信用代码必须为18位字母数字组合（不含I/O/Z/S/V），当前值: '{code}'"
-            )
-        return code
-
-    @field_validator("amac_registration_date")
-    @classmethod
-    def _registration_date_not_future(cls, v: Optional[date]) -> Optional[date]:
-        if v is not None and v > date.today():
-            raise ValueError(f"登记时间不能晚于今天，当前值: {v}")
-        return v
-
-    @field_validator("registered_capital", "paid_up_capital")
-    @classmethod
-    def _positive_capital(cls, v: Optional[Decimal]) -> Optional[Decimal]:
-        if v is not None and v < 0:
-            raise ValueError(f"资本不得为负数，当前值: {v}")
-        return v
-
-    @field_validator("capital_ratio")
-    @classmethod
-    def _validate_capital_ratio(cls, v: Optional[Decimal]) -> Optional[Decimal]:
-        if v is not None and (v < 0 or v > 100):
-            raise ValueError(f"实缴比例必须在 0~100 之间，当前值: {v}")
-        return v
-
-    @field_validator("employee_count", "fund_industry_count")
-    @classmethod
-    def _non_negative_int(cls, v: Optional[int]) -> Optional[int]:
-        if v is not None and v < 0:
-            raise ValueError(f"人数不得为负数，当前值: {v}")
-        return v
-
-    @model_validator(mode="after")
-    def _validate_manager_consistency(self) -> "FundManagerBase":
-        # 基金从业人数 ≤ 全职员工人数
-        if self.employee_count is not None and self.fund_industry_count is not None:
-            if self.fund_industry_count > self.employee_count:
-                raise ValueError(
-                    f"基金从业人数 ({self.fund_industry_count}) 不能超过全职员工人数 ({self.employee_count})"
-                )
-        return self
-
 
 class FundManagerCreate(FundManagerBase):
     pass
 
 
-class FundManagerUpdate(BaseModel):
+class FundManagerUpdate(FundManagerValidators, BaseModel):
     company_name: Optional[str] = Field(None, max_length=100, description='公司全称')
     english_name: Optional[str] = Field(None, max_length=200, description='英文名称')
     short_name: Optional[str] = Field(None, max_length=50, description='公司简称')
@@ -698,13 +483,16 @@ class FundManagerResponse(FundManagerBase):
     id: int
     created_at: datetime
     updated_at: datetime
-    # 关系
     funds: List[FundResponse] = []
 
     model_config = ConfigDict(from_attributes=True)
 
 
-class FundManagerPersonBase(BaseModel):
+# ================================================================
+# FundManagerPerson
+# ================================================================
+
+class FundManagerPersonBase(FundManagerPersonValidators, BaseModel):
     name: str = Field(..., max_length=50, description='姓名')
     gender: Optional[str] = Field(None, max_length=10, description='性别')
     birth_date: Optional[date] = Field(None, description='出生日期')
@@ -714,46 +502,12 @@ class FundManagerPersonBase(BaseModel):
     resume: Optional[str] = Field(None, description='工作履历')
     company_code: Optional[str] = Field(None, max_length=20, description='当前任职公司中基协登记编号')
 
-    @field_validator("name")
-    @classmethod
-    def _strip_name(cls, v: str) -> str:
-        name = v.strip()
-        if not name:
-            raise ValueError("姓名不能为空")
-        return name
-
-    @field_validator("gender")
-    @classmethod
-    def _validate_gender(cls, v: Optional[str]) -> Optional[str]:
-        if v is None:
-            return v
-        g = v.strip()
-        if not g:
-            return None
-        if g not in ("男", "女"):
-            raise ValueError(f"性别只能为'男'或'女'，当前值: '{g}'")
-        return g
-
-    @field_validator("birth_date")
-    @classmethod
-    def _birth_date_not_future(cls, v: Optional[date]) -> Optional[date]:
-        if v is not None and v > date.today():
-            raise ValueError(f"出生日期不能晚于今天，当前值: {v}")
-        return v
-
-    @field_validator("education", "qualification_number", "resume", "company_code")
-    @classmethod
-    def _strip_optional_str(cls, v: Optional[str]) -> Optional[str]:
-        if v is None:
-            return v
-        return v.strip() or None
-
 
 class FundManagerPersonCreate(FundManagerPersonBase):
     pass
 
 
-class FundManagerPersonUpdate(BaseModel):
+class FundManagerPersonUpdate(FundManagerPersonValidators, BaseModel):
     name: Optional[str] = Field(None, max_length=50, description='姓名')
     gender: Optional[str] = Field(None, max_length=10, description='性别')
     birth_date: Optional[date] = Field(None, description='出生日期')
@@ -769,69 +523,29 @@ class FundManagerPersonResponse(FundManagerPersonBase):
     created_at: datetime
     updated_at: datetime
     current_company_id: Optional[int] = None
-    # 关系
     current_company: Optional[FundManagerResponse] = None
     funds: List[FundResponse] = []
 
     model_config = ConfigDict(from_attributes=True)
 
 
-class FundCategoryBase(BaseModel):
+# ================================================================
+# FundCategory
+# ================================================================
+
+class FundCategoryBase(FundCategoryValidators, BaseModel):
     category_code: str = Field(..., max_length=20, description='分类代码')
     category_name: str = Field(..., max_length=100, description='分类名称')
     parent_category_code: Optional[str] = Field(None, max_length=20, description='父级分类代码')
     level: int = Field(1, description='分类层级')
     description: Optional[str] = Field(None, description='分类描述')
 
-    @field_validator("category_code")
-    @classmethod
-    def _strip_category_code(cls, v: str) -> str:
-        code = v.strip()
-        if not code:
-            raise ValueError("分类代码不能为空")
-        return code
-
-    @field_validator("category_name")
-    @classmethod
-    def _strip_category_name(cls, v: str) -> str:
-        name = v.strip()
-        if not name:
-            raise ValueError("分类名称不能为空")
-        return name
-
-    @field_validator("level")
-    @classmethod
-    def _positive_level(cls, v: int) -> int:
-        if v < 1:
-            raise ValueError(f"分类层级必须 ≥ 1，当前值: {v}")
-        return v
-
-    @field_validator("parent_category_code")
-    @classmethod
-    def _strip_parent_category_code(cls, v: Optional[str]) -> Optional[str]:
-        if v is None:
-            return v
-        return v.strip() or None
-
-    @field_validator("description")
-    @classmethod
-    def _strip_description(cls, v: Optional[str]) -> Optional[str]:
-        if v is None:
-            return v
-        return v.strip() or None
-
-    @model_validator(mode="after")
-    def _validate_category_consistency(self) -> "FundCategoryBase":
-        if self.level == 1 and self.parent_category_code is not None:
-            raise ValueError("一级分类不应设置父级分类代码")
-        return self
-
 
 class FundCategoryCreate(FundCategoryBase):
     pass
 
 
-class FundCategoryUpdate(BaseModel):
+class FundCategoryUpdate(FundCategoryValidators, BaseModel):
     category_code: Optional[str] = Field(None, max_length=20, description='分类代码')
     category_name: Optional[str] = Field(None, max_length=100, description='分类名称')
     parent_category_code: Optional[str] = Field(None, max_length=20, description='父级分类代码')
@@ -843,13 +557,16 @@ class FundCategoryResponse(FundCategoryBase):
     id: int
     created_at: datetime
     parent_id: Optional[int] = None
-    # 自引用关系
     parent: Optional[FundCategoryResponse] = None
     children: List[FundCategoryResponse] = []
     funds: List[FundResponse] = []
 
     model_config = ConfigDict(from_attributes=True)
 
+
+# ================================================================
+# FundCategoryMapping
+# ================================================================
 
 class FundCategoryMappingBase(BaseModel):
     fund_code: str = Field(..., max_length=20, description='基金代码')
@@ -876,6 +593,10 @@ class FundCategoryMappingResponse(FundCategoryMappingBase):
 
     model_config = ConfigDict(from_attributes=True)
 
+
+# ================================================================
+# Model rebuilds
+# ================================================================
 
 FundResponse.model_rebuild()
 FundNavResponse.model_rebuild()
