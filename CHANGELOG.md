@@ -1,3 +1,18 @@
+## [0.10.2] 2026-05-13
+
+### Added
+
+- **共享解析基类**：新增 [`handlers/base_handlers.py`](fund_nav_mcp/handlers/base_handlers.py)，提供 `CodeResolveMixin`，统一封装外键 `code → id` 解析和名称兜底解析逻辑，供 `AddHandler` 及后续 `UpdateHandler` 复用。
+
+### Changed
+
+- **AddHandler 重构**：[`AddHandler`](fund_nav_mcp/handlers/add_handlers.py) 继承 `CodeResolveMixin`，移除类内部重复的 `_CODE_RESOLVE_MAP`、`_NAME_RESOLVE_MAP` 等映射定义，直接复用基类方法。
+- **查询处理器重命名与增强**：`ForeignKeyDisplayHandler` 重命名为 [`QueryHandler`](fund_nav_mcp/handlers/query_handlers.py)，新增 `__init__(field_mapping=None)` 支持实例级自定义字段映射，不再强制使用类默认配置；`handle` 方法内部使用实例的 `field_mapping`，提升不同业务场景的复用性。
+
+### Fixed
+
+- **模拟数据插入字段过滤**：修复 [`scripts/mock_data.py`](mock/mock_fund_data.py) 中向关系数据库写入 `fund_category_mapping` 等表时，因字典包含 `id` 字段（自增主键）导致 SQLAlchemy 插入失败的问题。现在插入前会过滤仅保留 ORM 模型实际定义的列，确保兼容 PostgreSQL/MySQL 等严格数据库。
+
 ## [0.10.1] 2026-05-13
 
 ### Added

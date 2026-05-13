@@ -526,7 +526,11 @@ async def insert_data(mgr: DBManager | InfluxDBManager, table_name: str, data: L
 
     elif isinstance(mgr, DBManager):
         async with mgr.get_session() as session:
-            orm_objects = [orm_class(**row) for row in data]
+            orm_columns = {c.name for c in orm_class.__table__.columns}
+            orm_objects = [
+                orm_class(**{k: v for k, v in row.items() if k in orm_columns})
+                for row in data
+            ]
             session.add_all(orm_objects)
             await session.commit()
         logger.info(f"已向 RDBMS 写入 {len(data)} 条记录 ({table_name})")

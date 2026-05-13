@@ -14,7 +14,7 @@ from typing import Optional
 
 from fastmcp.tools import tool
 
-from fund_nav_mcp.handlers import ForeignKeyDisplayHandler
+from fund_nav_mcp.handlers import QueryHandler
 from fund_nav_mcp.models.common import UtilResponse
 from fund_nav_mcp.models.orm import Fund, FundManager, FundManagerPerson, FundCategory, FundCategoryMapping, FundNav, \
     FundReturn, FundHolding
@@ -31,8 +31,8 @@ from fund_nav_mcp.models.schemas import PaginationParams
 
 async def _handle_query(model, params, filter_or_search, db_name: str = "default") -> UtilResponse:
     """统一创建 Handler 并执行查询"""
-    query_handler = ForeignKeyDisplayHandler()
-    return await query_handler.handle(model, params, filter_or_search, db_name)
+    handler = QueryHandler()
+    return await handler.handle(model, params, filter_or_search, db_name)
 
 
 # ==================== Fund ====================
