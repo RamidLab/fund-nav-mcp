@@ -9,10 +9,9 @@ from pydantic import Field
 
 from fund_nav_mcp.models.orm import Fund, FundManager, FundManagerPerson, FundCategory, FundCategoryMapping, FundNav, \
     FundReturn, FundHolding
-from fund_nav_mcp.models.pydantic import BaseFilter
 from fund_nav_mcp.models.pydantic.builder import create_filter_class
 
-FundFilter: type[BaseFilter] = create_filter_class(
+FundFilter = create_filter_class(
     model=Fund,
     exclude=["fund_manager_person_id", "fund_manager_id"],
     column_mappings={
@@ -30,7 +29,8 @@ FundFilter: type[BaseFilter] = create_filter_class(
         "sort_order": (Literal["asc", "desc"], Field(default="asc", title="排序方向", description="排序方向")),
     },
 )
-FundManagerFilter: type[BaseFilter] = create_filter_class(
+
+FundManagerFilter = create_filter_class(
     model=FundManager,
     extra_fields={
         "sort_by": (
@@ -45,7 +45,7 @@ FundManagerFilter: type[BaseFilter] = create_filter_class(
     },
 )
 
-FundManagerPersonFilter: type[BaseFilter] = create_filter_class(
+FundManagerPersonFilter = create_filter_class(
     model=FundManagerPerson,
     include=["gender", "education", "is_qualified"],
     column_mappings={
@@ -59,7 +59,7 @@ FundManagerPersonFilter: type[BaseFilter] = create_filter_class(
     }
 )
 
-FundCategoryFilter: type[BaseFilter] = create_filter_class(
+FundCategoryFilter = create_filter_class(
     model=FundCategory,
     exclude=["parent_id"],
     column_mappings={
@@ -83,7 +83,7 @@ FundCategoryFilter: type[BaseFilter] = create_filter_class(
     },
 )
 
-FundCategoryMappingFilter: type[BaseFilter] = create_filter_class(
+FundCategoryMappingFilter = create_filter_class(
     model=FundCategoryMapping,
     extra_fields={
         "sort_by": (
@@ -95,7 +95,7 @@ FundCategoryMappingFilter: type[BaseFilter] = create_filter_class(
     },
 )
 
-FundNavFilter: type[BaseFilter] = create_filter_class(
+FundNavFilter = create_filter_class(
     model=FundNav,
     exclude=["id", "fund_id"],
     column_mappings={
@@ -113,7 +113,7 @@ FundNavFilter: type[BaseFilter] = create_filter_class(
     },
 )
 
-FundReturnFilter: type[BaseFilter] = create_filter_class(
+FundReturnFilter = create_filter_class(
     model=FundReturn,
     exclude=["id", "fund_id"],
     column_mappings={
@@ -131,7 +131,7 @@ FundReturnFilter: type[BaseFilter] = create_filter_class(
     },
 )
 
-FundHoldingFilter: type[BaseFilter] = create_filter_class(
+FundHoldingFilter = create_filter_class(
     model=FundHolding,
     exclude=["fund_id"],
     column_mappings={

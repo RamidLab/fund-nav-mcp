@@ -1,0 +1,18 @@
+from typing import Type
+
+from fund_nav_mcp.models.pydantic import BaseSearchByFields, BaseSearchByKeyword
+
+FundCategorySearchByFields: Type[BaseSearchByFields]
+FundCategorySearchByKeyword: Type[BaseSearchByKeyword]
+FundHoldingSearchByFields: Type[BaseSearchByFields]
+FundHoldingSearchByKeyword: Type[BaseSearchByKeyword]
+FundManagerPersonSearchByFields: Type[BaseSearchByFields]
+FundManagerPersonSearchByKeyword: Type[BaseSearchByKeyword]
+FundManagerSearchByFields: Type[BaseSearchByFields]
+FundManagerSearchByKeyword: Type[BaseSearchByKeyword]
+FundNavSearchByFields: Type[BaseSearchByFields]
+FundNavSearchByKeyword: Type[BaseSearchByKeyword]
+FundReturnSearchByFields: Type[BaseSearchByFields]
+FundReturnSearchByKeyword: Type[BaseSearchByKeyword]
+FundSearchByFields: Type[BaseSearchByFields]
+FundSearchByKeyword: Type[BaseSearchByKeyword]

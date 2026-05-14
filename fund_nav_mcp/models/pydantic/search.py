@@ -10,11 +10,8 @@ __all__ = [
 ]
 
 from fund_nav_mcp.models.orm import Fund, FundManager, FundManagerPerson, FundCategory, FundNav, FundReturn, FundHolding
-from fund_nav_mcp.models.pydantic import BaseSearchByKeyword, BaseSearchByFields
 from fund_nav_mcp.models.pydantic.builder import create_search_class
 
-FundSearchByKeyword: type[BaseSearchByKeyword]
-FundSearchByFields: type[BaseSearchByFields]
 FundSearchByKeyword, FundSearchByFields = create_search_class(
     model=Fund,
     include=[
@@ -28,8 +25,6 @@ FundSearchByKeyword, FundSearchByFields = create_search_class(
     },
 )
 
-FundManagerSearchByKeyword: type[BaseSearchByKeyword]
-FundManagerSearchByFields: type[BaseSearchByFields]
 FundManagerSearchByKeyword, FundManagerSearchByFields = create_search_class(
     model=FundManager,
     include=[
@@ -38,8 +33,6 @@ FundManagerSearchByKeyword, FundManagerSearchByFields = create_search_class(
     ]
 )
 
-FundManagerPersonSearchByKeyword: type[BaseSearchByKeyword]
-FundManagerPersonSearchByFields: type[BaseSearchByFields]
 FundManagerPersonSearchByKeyword, FundManagerPersonSearchByFields = create_search_class(
     model=FundManagerPerson,
     include=["name", "resume"],
@@ -48,8 +41,6 @@ FundManagerPersonSearchByKeyword, FundManagerPersonSearchByFields = create_searc
     },
 )
 
-FundCategorySearchByKeyword: type[BaseSearchByKeyword]
-FundCategorySearchByFields: type[BaseSearchByFields]
 FundCategorySearchByKeyword, FundCategorySearchByFields = create_search_class(
     model=FundCategory,
     include=["category_name", "description"],
@@ -61,8 +52,6 @@ FundCategorySearchByKeyword, FundCategorySearchByFields = create_search_class(
     },
 )
 
-FundNavSearchByKeyword: type[BaseSearchByKeyword]
-FundNavSearchByFields: type[BaseSearchByFields]
 FundNavSearchByKeyword, FundNavSearchByFields = create_search_class(
     model=FundNav,
     relation_mappings={
@@ -71,8 +60,6 @@ FundNavSearchByKeyword, FundNavSearchByFields = create_search_class(
     },
 )
 
-FundReturnSearchByKeyword: type[BaseSearchByKeyword]
-FundReturnSearchByFields: type[BaseSearchByFields]
 FundReturnSearchByKeyword, FundReturnSearchByFields = create_search_class(
     model=FundReturn,
     relation_mappings={
@@ -81,8 +68,6 @@ FundReturnSearchByKeyword, FundReturnSearchByFields = create_search_class(
     },
 )
 
-FundHoldingSearchByKeyword: type[BaseSearchByKeyword]
-FundHoldingSearchByFields: type[BaseSearchByFields]
 FundHoldingSearchByKeyword, FundHoldingSearchByFields = create_search_class(
     model=FundHolding,
     include=["stock_code", "stock_name"],

@@ -14,6 +14,7 @@ from sqlalchemy.sql.sqltypes import Enum as SQLEnum
 
 from fund_nav_mcp.models.orm import Base
 from fund_nav_mcp.models.pydantic import BaseFilter, FilterField, BaseSearchByKeyword, SearchField, BaseSearchByFields
+from fund_nav_mcp.models.pydantic.generate import register_pyi_class
 from fund_nav_mcp.utils.log import get_logger
 
 logger = get_logger(__name__)
@@ -249,7 +250,7 @@ def _drop_abstract_methods(cls: type, *method_names: str) -> None:
 
 
 def create_filter_class(
-        model: Type[Base],
+        model: type[Base],
         include: Optional[List[str]] = None,
         exclude: Optional[List[str]] = None,
         column_mappings: Optional[Dict[str, Union[InstrumentedAttribute, Tuple[InstrumentedAttribute, type], Tuple[
@@ -257,7 +258,7 @@ def create_filter_class(
         extra_fields: Optional[Dict[str, Tuple[type, Any]]] = None,
         exclude_comparable_fields: Optional[List[str]] = None,
         suppress_warnings: bool = False,
-) -> Type[BaseFilter]:
+) -> type[BaseFilter]:
     """
     动态创建 Filter 子类（零类型警告、自动推断字段、全字段可选）。
 
@@ -377,17 +378,19 @@ def create_filter_class(
 
     _drop_abstract_methods(new_filter, "_filter_mappings", "_model_class")
 
+    register_pyi_class(class_name, BaseFilter, "filter")
+
     return new_filter
 
 
 def create_search_class(
-        model: Type[Base],
+        model: type[Base],
         include: Optional[List[str]] = None,
         exclude: Optional[List[str]] = None,
         column_mappings: Optional[Dict[str, Tuple[InstrumentedAttribute, type]]] = None,
         relation_mappings: Optional[Dict[str, Tuple[str, Type[Base], str]]] = None,
         suppress_warnings: bool = False,
-) -> Tuple[Type["BaseSearchByKeyword"], Type["BaseSearchByFields"]]:
+) -> Tuple[type[BaseSearchByKeyword], type[BaseSearchByFields]]:
     """
     根据 ORM 模型自动生成关键词搜索和字段搜索两个 Pydantic 类。
 
@@ -511,5 +514,8 @@ def create_search_class(
 
     field_search_class._model_class = staticmethod(lambda: model)
     _drop_abstract_methods(field_search_class, "_column_mappings", "_model_class", "_relation_cond")
+
+    register_pyi_class(class_name_kw, BaseSearchByKeyword, "search")
+    register_pyi_class(class_name_fs, BaseSearchByFields, "search")
 
     return keyword_search_class, field_search_class

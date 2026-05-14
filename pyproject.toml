@@ -1,6 +1,6 @@
 [project]
 name = "fund-nav-mcp"
-version = "0.12.0"
+version = "0.12.1"
 description = "A MCP server for fund NAV management"
 authors = [{ name = "ramid", email = "ramid@qq.com" }]
 readme = "README.md"

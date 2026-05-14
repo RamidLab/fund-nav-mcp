@@ -1,3 +1,17 @@
+## [0.12.1] 2026-05-14
+
+### Added
+
+- **动态类存根生成**：新增 [`models/pydantic/generate.py`](fund_nav_mcp/models/pydantic/generate.py)，提供 `register_pyi_class()` 函数，在创建动态 Filter/Search 类时自动注册，并生成 `.pyi` 存根文件，解决动态类在 IDE 中无类型提示的问题。
+- **存根刷新脚本**：新增 [`refresh_stubs.py`](scripts/refresh_stub.py)，调用 `clean_registry()` 清空注册表后重新加载 `filter` 和 `search` 模块，重新生成所有存根文件，便于开发时手动刷新类型提示。
+
+### Changed
+
+- **`create_filter_class` 增强**：在 [`models/pydantic/builder.py`](fund_nav_mcp/models/pydantic/builder.py) 中，创建动态 Filter 类后自动调用 `register_pyi_class` 注册至 `filter.pyi`，使生成的类具备类型提示支持。
+- **`create_search_class` 增强**：同样在 `builder.py` 中，创建关键词搜索类和字段搜索类后分别调用 `register_pyi_class` 注册至 `search.pyi`。
+- **`filter_classes.py` 简化**：移除所有显式的 `: type[BaseFilter]` 类型注解，改为直接赋值，依赖自动生成的 `.pyi` 文件提供类型信息，代码更简洁。
+- **`search_classes.py` 简化**：同样移除 `: type[BaseSearchByKeyword]` 和 `: type[BaseSearchByFields]` 类型注解，直接赋值。
+
 ## [0.12.0] 2026-05-13
 
 ### Added

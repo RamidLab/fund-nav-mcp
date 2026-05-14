@@ -233,7 +233,7 @@ class BaseSearchByFields(BaseModel, ABC):
 
     @staticmethod
     @abstractmethod
-    def _model_class() -> type:
+    def _model_class() -> type[T]:
         """返回搜索的目标模型类"""
         ...
 
