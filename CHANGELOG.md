@@ -10,10 +10,6 @@
 - **删除工具批量接口升级**：[`tools/delete_tools.py`](fund_nav_mcp/tools/delete_tools.py) 中所有 `delete_*s` 工具参数从 `ids: List[int]` 改为 `data_list: List[对应Delete模型]`，调用方可通过多种方式定位每条待删除记录，而不仅限于主键 ID。
 - **Pydantic 删除模型简化**：[`models/pydantic/fund.py`](fund_nav_mcp/models/pydantic/fund.py) 中所有 `*Delete` 类改为继承 `BaseDeleteModel`，移除各自重复定义的 `record_id` 字段及相应的校验器，代码量显著减少。
 
-### Removed
-
-- 无。
-
 ## [0.12.1] 2026-05-14
 
 ### Added

@@ -477,11 +477,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Changelog
 
-### v0.1.0 (2026-04-29)
-
-- Initial release
-- Basic MCP server framework
-- Multi-source support
-- Configuration management interface and tool integration
-
 For detailed changes, see [CHANGELOG.md](CHANGELOG.md)
