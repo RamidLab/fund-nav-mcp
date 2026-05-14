@@ -20,6 +20,7 @@ from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
 
+from fund_nav_mcp.models.pydantic import BaseDeleteModel
 from fund_nav_mcp.models.pydantic.fund_validators import (
     FundValidators, FundNavValidators, FundReturnValidators, FundHoldingValidators,
     FundManagerValidators, FundManagerPersonValidators, FundCategoryValidators,
@@ -292,9 +293,8 @@ class FundUpdate(FundValidators, BaseModel):
     parent_fund_code: Optional[str] = Field(default=None, max_length=20, description='父基金代码')
 
 
-class FundDelete(BaseModel):
+class FundDelete(BaseDeleteModel):
     """删除基金产品 — 通过 record_id、fund_code 或 fund_name 定位记录"""
-    record_id: Optional[int] = Field(default=None, description='记录ID')
     fund_code: Optional[str] = Field(default=None, max_length=20, description='基金代码')
     fund_name: Optional[str] = Field(default=None, max_length=200, description='基金名称')
 
@@ -367,9 +367,8 @@ class FundNavUpdate(FundNavValidators, BaseModel):
     data_source: Optional[FundDataSource] = Field(None, description='数据来源')
 
 
-class FundNavDelete(BaseModel):
+class FundNavDelete(BaseDeleteModel):
     """删除基金净值 — 通过 record_id，或 fund_code + nav_date 定位记录"""
-    record_id: Optional[int] = Field(default=None, description='记录ID')
     fund_code: Optional[str] = Field(default=None, max_length=20, description='基金代码')
     nav_date: Optional[date] = Field(default=None, description='净值日期')
 
@@ -422,9 +421,8 @@ class FundReturnUpdate(FundReturnValidators, BaseModel):
     calculation_date: Optional[date] = Field(None, description='计算日期')
 
 
-class FundReturnDelete(BaseModel):
+class FundReturnDelete(BaseDeleteModel):
     """删除基金收益率 — 通过 record_id，或 fund_code + period_type + calculation_date 定位记录"""
-    record_id: Optional[int] = Field(default=None, description='记录ID')
     fund_code: Optional[str] = Field(default=None, max_length=20, description='基金代码')
     period_type: Optional[PeriodType] = Field(default=None, description='周期类型')
     calculation_date: Optional[date] = Field(default=None, description='计算日期')
@@ -483,9 +481,8 @@ class FundHoldingUpdate(FundHoldingValidators, BaseModel):
     shares_held: Optional[Decimal] = Field(None, max_digits=15, decimal_places=2, description='持股数量（万股）')
 
 
-class FundHoldingDelete(BaseModel):
+class FundHoldingDelete(BaseDeleteModel):
     """删除基金持仓 — 通过 record_id，或 fund_code + report_date + stock_code 定位记录"""
-    record_id: Optional[int] = Field(default=None, description='记录ID')
     fund_code: Optional[str] = Field(default=None, max_length=20, description='基金代码')
     report_date: Optional[date] = Field(default=None, description='报告日期')
     stock_code: Optional[str] = Field(default=None, max_length=20, description='股票代码')
@@ -566,9 +563,8 @@ class FundManagerUpdate(FundManagerValidators, BaseModel):
     legal_representative: Optional[str] = Field(None, max_length=50, description='法定代表人')
 
 
-class FundManagerDelete(BaseModel):
+class FundManagerDelete(BaseDeleteModel):
     """删除基金管理人（机构） — 通过 record_id、amac_registration_number、company_name 或 unified_code 定位记录"""
-    record_id: Optional[int] = Field(default=None, description='记录ID')
     amac_registration_number: Optional[str] = Field(default=None, max_length=20, description='中基协登记编号')
     company_name: Optional[str] = Field(default=None, max_length=100, description='公司全称')
     unified_code: Optional[str] = Field(default=None, max_length=18, description='统一社会信用代码')
@@ -627,9 +623,8 @@ class FundManagerPersonUpdate(FundManagerPersonValidators, BaseModel):
     company_code: Optional[str] = Field(None, max_length=20, description='当前任职公司中基协登记编号')
 
 
-class FundManagerPersonDelete(BaseModel):
+class FundManagerPersonDelete(BaseDeleteModel):
     """删除基金管理人（个人） — 通过 record_id、qualification_number、name 或 name+company_code 定位记录"""
-    record_id: Optional[int] = Field(default=None, description='记录ID')
     qualification_number: Optional[str] = Field(default=None, max_length=50, description='基金从业资格证号')
     name: Optional[str] = Field(default=None, max_length=50, description='姓名')
     company_code: Optional[str] = Field(default=None, max_length=20,
@@ -686,9 +681,8 @@ class FundCategoryUpdate(FundCategoryValidators, BaseModel):
     description: Optional[str] = Field(None, description='分类描述')
 
 
-class FundCategoryDelete(BaseModel):
+class FundCategoryDelete(BaseDeleteModel):
     """删除基金分类 — 通过 record_id、category_code 或 category_name 定位记录"""
-    record_id: Optional[int] = Field(default=None, description='记录ID')
     category_code: Optional[str] = Field(default=None, max_length=20, description='分类代码')
     category_name: Optional[str] = Field(default=None, max_length=100, description='分类名称')
 
@@ -730,9 +724,8 @@ class FundCategoryMappingCreate(FundCategoryMappingBase):
     pass
 
 
-class FundCategoryMappingDelete(BaseModel):
+class FundCategoryMappingDelete(BaseDeleteModel):
     """删除基金分类映射 — 通过 record_id，或 fund_code + category_code 定位记录"""
-    record_id: Optional[int] = Field(default=None, description='记录ID')
     fund_code: Optional[str] = Field(default=None, max_length=20, description='基金代码')
     category_code: Optional[str] = Field(default=None, max_length=20, description='分类代码')
 

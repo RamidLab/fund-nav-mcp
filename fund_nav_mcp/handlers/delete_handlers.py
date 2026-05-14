@@ -1,6 +1,5 @@
 from typing import Any, Dict, List, Optional, Type
 
-from pydantic import BaseModel
 from sqlalchemy import func, select
 
 from fund_nav_mcp.db.core import get_manager
@@ -11,6 +10,7 @@ from fund_nav_mcp.models.orm import (
     FundNav, FundReturn, FundHolding,
 )
 from fund_nav_mcp.models.orm.base import Base
+from fund_nav_mcp.models.pydantic import BaseDeleteModel
 from fund_nav_mcp.utils.enums import Errcode
 
 
@@ -48,35 +48,97 @@ class DeleteHandler(CodeResolveMixin):
         FundCategory: [("category_name", FundCategory.category_name, FundCategory.category_code)],
     }
 
-    async def handle(
-            self, orm_model: Type[Base], data: BaseModel, db_name: str = "default",
-    ) -> UtilResponse[dict[str, int]]:
-        """
-        删除单条 ORM 记录。
-
-        定位优先级：
-            1. record_id
-            2. 自有编码字段（如 fund_code）
-            3. 额外编码字段（如 amac_registration_number）
-            4. 复合字段（如 fund_code + nav_date）
-            5. 名称字段（如 fund_name），同名时报错并列出候选项
-
-        Args:
-            orm_model: 目标 ORM 模型类。
-            data: Pydantic 删除模型，包含定位字段。
-            db_name: 数据库配置名称，默认为 "default"。
-
-        Returns:
-            UtilResponse，包含已删除记录的 id。
-        """
-        data_dict = data.model_dump(exclude_none=True)
-        record_id = data_dict.pop("record_id", None)
-
-        target_id = await self._resolve_delete_target(orm_model, record_id, data_dict, db_name)
-
+    async def _resolve_compound_target(
+            self, orm_model: Type[Base], data_dict: Dict[str, Any], db_name: str,
+    ) -> Optional[int]:
+        """为需要通过复合外键定位的模型解析目标 ID。"""
         mgr = (await get_manager("db", db_name))["mgr"]
-        await mgr.delete_by_id(orm_model, target_id)
-        return UtilResponse(code=Errcode.SUCCESS, message="删除成功。", data={"id": target_id})
+
+        if orm_model is FundCategoryMapping:
+            fund_code = data_dict.get("fund_code")
+            category_code = data_dict.get("category_code")
+            if isinstance(fund_code, str) and isinstance(category_code, str):
+                fund_code = fund_code.strip()
+                category_code = category_code.strip()
+                fk_data = [{"fund_code": fund_code, "category_code": category_code}]
+                resolved = await self._resolve_fk_codes(orm_model, fk_data, db_name)
+                fd = resolved[0]
+                stmt = select(orm_model.id).where(
+                    getattr(orm_model, "fund_id") == fd.get("fund_id"),
+                    getattr(orm_model, "category_id") == fd.get("category_id"),
+                )
+                row = await mgr.fetch_one(stmt)
+                if row is None:
+                    raise ValueError(
+                        f"未找到 fund_code='{fund_code}' 与 category_code='{category_code}' 的映射记录。"
+                    )
+                return row["id"]
+
+        elif orm_model is FundNav:
+            fund_code = data_dict.get("fund_code")
+            nav_date = data_dict.get("nav_date")
+            if isinstance(fund_code, str) and nav_date is not None:
+                fund_code = fund_code.strip()
+                fk_data = [{"fund_code": fund_code}]
+                resolved = await self._resolve_fk_codes(FundNav, fk_data, db_name)
+                fund_id = resolved[0].get("fund_id")
+                stmt = select(orm_model.id).where(
+                    getattr(orm_model, "fund_id") == fund_id,
+                    getattr(orm_model, "nav_date") == nav_date,
+                )
+                row = await mgr.fetch_one(stmt)
+                if row is None:
+                    raise ValueError(
+                        f"未找到 fund_code='{fund_code}' 且 nav_date={nav_date} 的净值记录。"
+                    )
+                return row["id"]
+
+        elif orm_model is FundReturn:
+            fund_code = data_dict.get("fund_code")
+            period_type = data_dict.get("period_type")
+            calculation_date = data_dict.get("calculation_date")
+            if isinstance(fund_code, str) and period_type is not None and calculation_date is not None:
+                fund_code = fund_code.strip()
+                fk_data = [{"fund_code": fund_code}]
+                resolved = await self._resolve_fk_codes(FundReturn, fk_data, db_name)
+                fund_id = resolved[0].get("fund_id")
+                stmt = select(FundReturn.id).where(  # type: ignore[reportArgumentType]
+                    getattr(orm_model, "fund_id") == fund_id,
+                    getattr(orm_model, "period_type") == period_type,
+                    getattr(orm_model, "calculation_date") == calculation_date,
+                )
+                row = await mgr.fetch_one(stmt)
+                if row is None:
+                    raise ValueError(
+                        f"未找到 fund_code='{fund_code}'、period_type={period_type} 且 "
+                        f"calculation_date={calculation_date} 的收益率记录。"
+                    )
+                return row["id"]
+
+        elif orm_model is FundHolding:
+            fund_code = data_dict.get("fund_code")
+            report_date = data_dict.get("report_date")
+            stock_code = data_dict.get("stock_code")
+            if isinstance(fund_code, str) and report_date is not None and isinstance(stock_code, str):
+                fund_code = fund_code.strip()
+                stock_code = stock_code.strip()
+                fk_data = [{"fund_code": fund_code}]
+                resolved = await self._resolve_fk_codes(FundHolding, fk_data, db_name)
+                fund_id = resolved[0].get("fund_id")
+                stmt = select(orm_model.id).where(
+                    getattr(orm_model, "fund_id") == fund_id,
+                    getattr(orm_model, "report_date") == report_date,
+                    getattr(orm_model, "stock_code") == stock_code,
+                )
+                row = await mgr.fetch_one(stmt)
+                if row is None:
+                    raise ValueError(
+                        f"未找到 fund_code='{fund_code}'、report_date={report_date} 且 "
+                        f"stock_code='{stock_code}' 的持仓记录。"
+                    )
+                return row["id"]
+
+        return None
 
     async def _resolve_delete_target(
             self, orm_model: Type[Base], record_id: Optional[int],
@@ -184,121 +246,70 @@ class DeleteHandler(CodeResolveMixin):
             f"无法定位 {orm_model.__tablename__} 记录：请提供 record_id、编码字段或名称字段。"
         )
 
-    async def _resolve_compound_target(
-            self, orm_model: Type[Base], data_dict: Dict[str, Any], db_name: str,
-    ) -> Optional[int]:
-        """为需要通过复合外键定位的模型解析目标 ID。"""
+    async def handle(
+            self, orm_model: Type[Base], data: BaseDeleteModel, db_name: str = "default",
+    ) -> UtilResponse[dict[str, int]]:
+        """
+        删除单条 ORM 记录。
+
+        定位优先级：
+            1. record_id
+            2. 自有编码字段（如 fund_code）
+            3. 额外编码字段（如 amac_registration_number）
+            4. 复合字段（如 fund_code + nav_date）
+            5. 名称字段（如 fund_name），同名时报错并列出候选项
+
+        Args:
+            orm_model: 目标 ORM 模型类。
+            data: Pydantic 删除模型，包含定位字段。
+            db_name: 数据库配置名称，默认为 "default"。
+
+        Returns:
+            UtilResponse，包含已删除记录的 id。
+        """
+        data_dict = data.model_dump(exclude_none=True)
+        record_id = data_dict.pop("record_id", None)
+
+        target_id = await self._resolve_delete_target(orm_model, record_id, data_dict, db_name)
+
         mgr = (await get_manager("db", db_name))["mgr"]
+        await mgr.delete_by_id(orm_model, target_id)
+        return UtilResponse(code=Errcode.SUCCESS, message="删除成功。", data={"id": target_id})
 
-        if orm_model is FundCategoryMapping:
-            fund_code = data_dict.get("fund_code")
-            category_code = data_dict.get("category_code")
-            if isinstance(fund_code, str) and isinstance(category_code, str):
-                fund_code = fund_code.strip()
-                category_code = category_code.strip()
-                fk_data = [{"fund_code": fund_code, "category_code": category_code}]
-                resolved = await self._resolve_fk_codes(orm_model, fk_data, db_name)
-                fd = resolved[0]
-                stmt = select(orm_model.id).where(
-                    getattr(orm_model, "fund_id") == fd.get("fund_id"),
-                    getattr(orm_model, "category_id") == fd.get("category_id"),
-                )
-                row = await mgr.fetch_one(stmt)
-                if row is None:
-                    raise ValueError(
-                        f"未找到 fund_code='{fund_code}' 与 category_code='{category_code}' 的映射记录。"
-                    )
-                return row["id"]
-
-        elif orm_model is FundNav:
-            fund_code = data_dict.get("fund_code")
-            nav_date = data_dict.get("nav_date")
-            if isinstance(fund_code, str) and nav_date is not None:
-                fund_code = fund_code.strip()
-                fk_data = [{"fund_code": fund_code}]
-                resolved = await self._resolve_fk_codes(FundNav, fk_data, db_name)
-                fund_id = resolved[0].get("fund_id")
-                stmt = select(orm_model.id).where(
-                    getattr(orm_model, "fund_id") == fund_id,
-                    getattr(orm_model, "nav_date") == nav_date,
-                )
-                row = await mgr.fetch_one(stmt)
-                if row is None:
-                    raise ValueError(
-                        f"未找到 fund_code='{fund_code}' 且 nav_date={nav_date} 的净值记录。"
-                    )
-                return row["id"]
-
-        elif orm_model is FundReturn:
-            fund_code = data_dict.get("fund_code")
-            period_type = data_dict.get("period_type")
-            calculation_date = data_dict.get("calculation_date")
-            if isinstance(fund_code, str) and period_type is not None and calculation_date is not None:
-                fund_code = fund_code.strip()
-                fk_data = [{"fund_code": fund_code}]
-                resolved = await self._resolve_fk_codes(FundReturn, fk_data, db_name)
-                fund_id = resolved[0].get("fund_id")
-                stmt = select(FundReturn.id).where(  # type: ignore[reportArgumentType]
-                    getattr(orm_model, "fund_id") == fund_id,
-                    getattr(orm_model, "period_type") == period_type,
-                    getattr(orm_model, "calculation_date") == calculation_date,
-                )
-                row = await mgr.fetch_one(stmt)
-                if row is None:
-                    raise ValueError(
-                        f"未找到 fund_code='{fund_code}'、period_type={period_type} 且 "
-                        f"calculation_date={calculation_date} 的收益率记录。"
-                    )
-                return row["id"]
-
-        elif orm_model is FundHolding:
-            fund_code = data_dict.get("fund_code")
-            report_date = data_dict.get("report_date")
-            stock_code = data_dict.get("stock_code")
-            if isinstance(fund_code, str) and report_date is not None and isinstance(stock_code, str):
-                fund_code = fund_code.strip()
-                stock_code = stock_code.strip()
-                fk_data = [{"fund_code": fund_code}]
-                resolved = await self._resolve_fk_codes(FundHolding, fk_data, db_name)
-                fund_id = resolved[0].get("fund_id")
-                stmt = select(orm_model.id).where(
-                    getattr(orm_model, "fund_id") == fund_id,
-                    getattr(orm_model, "report_date") == report_date,
-                    getattr(orm_model, "stock_code") == stock_code,
-                )
-                row = await mgr.fetch_one(stmt)
-                if row is None:
-                    raise ValueError(
-                        f"未找到 fund_code='{fund_code}'、report_date={report_date} 且 "
-                        f"stock_code='{stock_code}' 的持仓记录。"
-                    )
-                return row["id"]
-
-        return None
-
-    @staticmethod
     async def handle_batch(
-            orm_model: Type[Base], ids: List[int], db_name: str = "default"
+            self, orm_model: Type[Base], data_list: List[BaseDeleteModel], db_name: str = "default"
     ) -> UtilResponse[dict[str, Any]]:
         """
         批量删除 ORM 记录。
 
+        每条数据使用与单条删除相同的定位逻辑（record_id / 编码 / 复合字段 / 名称），
+        解析出目标 ID 后统一批量删除。重名检测等校验与单条删除行为一致。
+
         Args:
             orm_model: 目标 ORM 模型类。
-            ids: 待删除记录的主键 id 列表。
+            data_list: Pydantic 删除模型列表，每项包含定位字段。
             db_name: 数据库配置名称，默认为 "default"。
 
         Returns:
             UtilResponse，data 中包含已删除的 id 列表与总数量。
-            若 ids 为空，直接返回成功但 count 为 0。
+            若 data_list 为空，直接返回成功但 count 为 0。
         """
-        if not ids:
+        if not data_list:
             return UtilResponse(code=Errcode.SUCCESS, message="没有需要删除的记录。", data={"count": 0})
 
+        target_ids: List[int] = []
+        for data in data_list:
+            data_dict = data.model_dump(exclude_none=True)
+            record_id = data_dict.pop("record_id", None)
+            target_id = await self._resolve_delete_target(orm_model, record_id, data_dict, db_name)
+            target_ids.append(target_id)
+
+        unique_ids = list(dict.fromkeys(target_ids))
+
         mgr = (await get_manager("db", db_name))["mgr"]
-        count = await mgr.delete_batch_by_ids(orm_model, ids)
+        count = await mgr.delete_batch_by_ids(orm_model, unique_ids)
         return UtilResponse(
             code=Errcode.SUCCESS,
             message="批量删除成功。",
-            data={"ids": ids, "count": count},
+            data={"ids": unique_ids, "count": count},
         )

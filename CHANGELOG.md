@@ -1,3 +1,19 @@
+## [0.12.2] 2026-05-14
+
+### Added
+
+- **删除模型基类**：新增 [`BaseDeleteModel`](fund_nav_mcp/models/pydantic/__init__.py)，定义抽象基类，包含 `record_id: Optional[int]` 公共字段，所有实体删除模型统一继承，消除重复代码。
+
+### Changed
+
+- **批量删除支持多策略定位**：[`DeleteHandler.handle_batch`](fund_nav_mcp/handlers/delete_handlers.py) 方法签名由 `(orm_model, ids, db_name)` 改为 `(orm_model, data_list, db_name)`，每条删除数据独立使用与单条删除相同的定位逻辑（record_id / 编码 / 复合字段 / 名称），大幅提升批量删除的灵活性。
+- **删除工具批量接口升级**：[`tools/delete_tools.py`](fund_nav_mcp/tools/delete_tools.py) 中所有 `delete_*s` 工具参数从 `ids: List[int]` 改为 `data_list: List[对应Delete模型]`，调用方可通过多种方式定位每条待删除记录，而不仅限于主键 ID。
+- **Pydantic 删除模型简化**：[`models/pydantic/fund.py`](fund_nav_mcp/models/pydantic/fund.py) 中所有 `*Delete` 类改为继承 `BaseDeleteModel`，移除各自重复定义的 `record_id` 字段及相应的校验器，代码量显著减少。
+
+### Removed
+
+- 无。
+
 ## [0.12.1] 2026-05-14
 
 ### Added

@@ -259,5 +259,12 @@ class BaseSearchByFields(BaseModel, ABC):
             return [or_(*conditions)]
         return conditions
 
+class BaseDeleteModel(BaseModel):
+    """所有删除 Pydantic 模型的基类，提供 record_id 公共字段。
 
-__all__ = ["FilterField", "BaseFilter", "BaseSearchByKeyword", "SearchField", "BaseSearchByFields"]
+    子类应定义具体的定位字段（编码、名称等）并通过 model_validator
+    实现 _validate_delete_lookup 校验至少提供一个定位字段。
+    """
+    record_id: Optional[int] = Field(default=None, description='记录ID')
+
+__all__ = ["FilterField", "BaseFilter", "BaseSearchByKeyword", "SearchField", "BaseSearchByFields", "BaseDeleteModel"]
