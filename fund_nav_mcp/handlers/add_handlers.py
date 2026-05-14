@@ -30,7 +30,7 @@ class AddHandler(CodeResolveMixin):
 
     async def handle(
             self, orm_model: Type[Base], data: BaseModel, db_name: str = "default",
-    ) -> UtilResponse:
+    ) -> UtilResponse[dict[str, int]]:
         """
         添加单条 ORM 记录。
 
@@ -58,7 +58,7 @@ class AddHandler(CodeResolveMixin):
 
     async def handle_batch(
             self, orm_model: Type[Base], data_list: List[BaseModel], db_name: str = "default"
-    ) -> UtilResponse:
+    ) -> UtilResponse[dict[str, list[int]]]:
         """
         批量添加记录。
 

@@ -8,7 +8,7 @@ __all__ = [
     "update_fund_holding", "update_fund_holdings",
 ]
 
-from typing import List, Optional, Type
+from typing import Any, List, Optional, Type
 
 from fastmcp.tools import tool
 from pydantic import BaseModel
@@ -28,7 +28,7 @@ from fund_nav_mcp.models.pydantic.fund import (
 
 async def _handle_update(
         orm_model: Type[Base], data: BaseModel, record_id: Optional[int] = None, db_name: str = "default",
-) -> UtilResponse:
+) -> UtilResponse[dict[str, int]]:
     """
     Update a single ORM record.
 
@@ -48,7 +48,7 @@ async def _handle_update(
 
 async def _handle_update_batch(
         orm_model: Type[Base], ids: List[int], data_list: List[BaseModel], db_name: str = "default",
-) -> UtilResponse:
+) -> UtilResponse[dict[str, Any]]:
     """
     Batch-update ORM records.
 
@@ -76,7 +76,7 @@ async def _handle_update_batch(
 )
 async def update_fund(
         data: FundUpdate, record_id: Optional[int] = None, db_name: str = "default"
-) -> UtilResponse:
+) -> UtilResponse[dict[str, int]]:
     """更新单条基金产品"""
     return await _handle_update(Fund, data, record_id, db_name)
 
@@ -89,7 +89,7 @@ async def update_fund(
 )
 async def update_funds(
         ids: List[int], data_list: List[FundUpdate], db_name: str = "default"
-) -> UtilResponse:
+) -> UtilResponse[dict[str, Any]]:
     """批量更新基金产品"""
     return await _handle_update_batch(Fund, ids, data_list, db_name)
 
@@ -105,7 +105,7 @@ async def update_funds(
 )
 async def update_fund_manager(
         data: FundManagerUpdate, record_id: Optional[int] = None, db_name: str = "default"
-) -> UtilResponse:
+) -> UtilResponse[dict[str, int]]:
     """更新单条基金管理人（机构）"""
     return await _handle_update(FundManager, data, record_id, db_name)
 
@@ -118,7 +118,7 @@ async def update_fund_manager(
 )
 async def update_fund_managers(
         ids: List[int], data_list: List[FundManagerUpdate], db_name: str = "default",
-) -> UtilResponse:
+) -> UtilResponse[dict[str, Any]]:
     """批量更新基金管理人（机构）"""
     return await _handle_update_batch(FundManager, ids, data_list, db_name)
 
@@ -134,7 +134,7 @@ async def update_fund_managers(
 )
 async def update_fund_manager_person(
         data: FundManagerPersonUpdate, record_id: Optional[int] = None, db_name: str = "default",
-) -> UtilResponse:
+) -> UtilResponse[dict[str, int]]:
     """更新单条基金管理人（个人）"""
     return await _handle_update(FundManagerPerson, data, record_id, db_name)
 
@@ -147,7 +147,7 @@ async def update_fund_manager_person(
 )
 async def update_fund_manager_persons(
         ids: List[int], data_list: List[FundManagerPersonUpdate], db_name: str = "default",
-) -> UtilResponse:
+) -> UtilResponse[dict[str, Any]]:
     """批量更新基金管理人（个人）"""
     return await _handle_update_batch(FundManagerPerson, ids, data_list, db_name)
 
@@ -163,7 +163,7 @@ async def update_fund_manager_persons(
 )
 async def update_fund_category(
         data: FundCategoryUpdate, record_id: Optional[int] = None, db_name: str = "default",
-) -> UtilResponse:
+) -> UtilResponse[dict[str, int]]:
     """更新单条基金分类"""
     return await _handle_update(FundCategory, data, record_id, db_name)
 
@@ -176,7 +176,7 @@ async def update_fund_category(
 )
 async def update_fund_categories(
         ids: List[int], data_list: List[FundCategoryUpdate], db_name: str = "default",
-) -> UtilResponse:
+) -> UtilResponse[dict[str, Any]]:
     """批量更新基金分类"""
     return await _handle_update_batch(FundCategory, ids, data_list, db_name)
 
@@ -192,7 +192,7 @@ async def update_fund_categories(
 )
 async def update_fund_nav(
         data: FundNavUpdate, record_id: Optional[int] = None, db_name: str = "default",
-) -> UtilResponse:
+) -> UtilResponse[dict[str, int]]:
     """更新单条基金净值"""
     return await _handle_update(FundNav, data, record_id, db_name)
 
@@ -205,7 +205,7 @@ async def update_fund_nav(
 )
 async def update_fund_navs(
         ids: List[int], data_list: List[FundNavUpdate], db_name: str = "default"
-) -> UtilResponse:
+) -> UtilResponse[dict[str, Any]]:
     """批量更新基金净值"""
     return await _handle_update_batch(FundNav, ids, data_list, db_name)
 
@@ -221,7 +221,7 @@ async def update_fund_navs(
 )
 async def update_fund_return(
         data: FundReturnUpdate, record_id: Optional[int] = None, db_name: str = "default",
-) -> UtilResponse:
+) -> UtilResponse[dict[str, int]]:
     """更新单条基金收益率"""
     return await _handle_update(FundReturn, data, record_id, db_name)
 
@@ -234,7 +234,7 @@ async def update_fund_return(
 )
 async def update_fund_returns(
         ids: List[int], data_list: List[FundReturnUpdate], db_name: str = "default",
-) -> UtilResponse:
+) -> UtilResponse[dict[str, Any]]:
     """批量更新基金收益率"""
     return await _handle_update_batch(FundReturn, ids, data_list, db_name)
 
@@ -250,7 +250,7 @@ async def update_fund_returns(
 )
 async def update_fund_holding(
         data: FundHoldingUpdate, record_id: Optional[int] = None, db_name: str = "default",
-) -> UtilResponse:
+) -> UtilResponse[dict[str, int]]:
     """更新单条基金持仓"""
     return await _handle_update(FundHolding, data, record_id, db_name)
 
@@ -263,6 +263,6 @@ async def update_fund_holding(
 )
 async def update_fund_holdings(
         ids: List[int], data_list: List[FundHoldingUpdate], db_name: str = "default",
-) -> UtilResponse:
+) -> UtilResponse[dict[str, Any]]:
     """批量更新基金持仓"""
     return await _handle_update_batch(FundHolding, ids, data_list, db_name)

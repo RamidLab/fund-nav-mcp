@@ -270,7 +270,7 @@ class CodeResolveMixin:
                         f"{candidates}"
                     )
                 # 将解析出的 id 填入数据
-                d[id_field] = hits[0].id
+                d[id_field] = hits[0]["id"]
 
         # 第四步：移除所有名称中间字段，这些字段不是 ORM 属性
         return [{k: v for k, v in d.items() if k not in self._NAME_FIELDS} for d in data_list]

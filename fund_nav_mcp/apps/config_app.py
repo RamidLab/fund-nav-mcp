@@ -1,6 +1,6 @@
 __all__ = ["config_app", "cond", "switch_default_config", "test_connection", "config_app_ui"]
 
-from typing import Any, List, Dict, Counter, Tuple
+from typing import Any, List, Dict, Counter, Tuple, Union
 
 from fastmcp import FastMCPApp
 from prefab_ui.actions import SetState, CloseOverlay, ShowToast
@@ -187,7 +187,7 @@ def switch_default_config(_class: str, _type: str, config: Dict[str, Any]) -> Di
     name="test_connection",
     description="测试连接"
 )
-def test_connection(_class: str, config: Dict[str, Any]) -> UtilResponse:
+def test_connection(_class: str, config: Dict[str, Any]) -> UtilResponse[Union[DatabaseConfig, CacheConfig]]:
     """
     测试连接
 

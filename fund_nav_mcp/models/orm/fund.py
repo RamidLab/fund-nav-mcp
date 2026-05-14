@@ -1,5 +1,6 @@
 __all__ = ['Fund', 'FundNav', 'FundReturn', 'FundHolding']
 
+from datetime import date
 from typing import List, TYPE_CHECKING, Optional
 
 from sqlalchemy import Integer, String, Date, DECIMAL, UniqueConstraint, ForeignKeyConstraint, Index
@@ -32,8 +33,8 @@ class Fund(Base):
     fund_management_type: Mapped[FundManagementType] = mapped_column(Integer, comment='基金管理类型')
     fund_custodian: Mapped[Optional[str]] = mapped_column(String(100), comment='基金托管人')
     fund_registration_address: Mapped[Optional[str]] = mapped_column(String(100), comment='注册地址')
-    establishment_date: Mapped[Date] = mapped_column(Date, comment='成立日期')
-    registration_date: Mapped[Date] = mapped_column(Date, comment='备案日期')
+    establishment_date: Mapped[date] = mapped_column(Date, comment='成立日期')
+    registration_date: Mapped[date] = mapped_column(Date, comment='备案日期')
     status: Mapped[FundStatus] = mapped_column(Integer, comment='基金状态')
     share_class: Mapped[ShareClass] = mapped_column(
         Integer,
@@ -75,7 +76,7 @@ class FundNav(Base):
     __tablename__ = 'fund_nav'
 
     fund_id: Mapped[int] = mapped_column(Integer, comment='基金产品ID，关联fund表的ID')
-    nav_date: Mapped[Date] = mapped_column(Date, comment='净值日期')
+    nav_date: Mapped[date] = mapped_column(Date, comment='净值日期')
     unit_nav: Mapped[float] = mapped_column(DECIMAL(10, 4), comment='单位净值')
     acc_nav: Mapped[Optional[float]] = mapped_column(DECIMAL(10, 4), comment='累计净值')
     adj_nav: Mapped[Optional[float]] = mapped_column(DECIMAL(10, 4), comment='复权净值')
@@ -104,7 +105,7 @@ class FundReturn(Base):
     return_rate: Mapped[float] = mapped_column(DECIMAL(10, 4), comment='收益率')
     rank: Mapped[int] = mapped_column(Integer, comment='同类排名')
     total_funds: Mapped[int] = mapped_column(Integer, comment='同类总数')
-    calculation_date: Mapped[Date] = mapped_column(Date, nullable=False, comment='计算日期')
+    calculation_date: Mapped[date] = mapped_column(Date, nullable=False, comment='计算日期')
 
     # 关系
     fund: Mapped['Fund'] = relationship("Fund", back_populates="returns")
@@ -124,7 +125,7 @@ class FundHolding(Base):
     __tablename__ = 'fund_holdings'
 
     fund_id: Mapped[int] = mapped_column(Integer, comment='基金产品ID，关联fund表的ID')
-    report_date: Mapped[Date] = mapped_column(Date, comment='报告日期')
+    report_date: Mapped[date] = mapped_column(Date, comment='报告日期')
     stock_code: Mapped[str] = mapped_column(String(20), comment='股票代码')
     stock_name: Mapped[str] = mapped_column(String(100), comment='股票名称')
     holding_ratio: Mapped[float] = mapped_column(DECIMAL(6, 4), comment='持仓比例')

@@ -227,7 +227,7 @@ class QueryHandler:
             params: PaginationParams,
             filter_or_search: Union[BaseFilter, BaseSearchByKeyword, BaseSearchByFields, None],
             db_name: str,
-    ) -> UtilResponse:
+    ) -> UtilResponse[PageData]:
         """
         执行分页查询并应用外键字段展开，返回统一响应。
 

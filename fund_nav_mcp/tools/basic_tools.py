@@ -25,7 +25,7 @@ from fund_nav_mcp.utils.enums import NodeStatus, Errcode
     description="检查MCP服务器健康状态，返回服务是否正常",
     tags={"sys_tool"}
 )
-async def health() -> UtilResponse:
+async def health() -> UtilResponse[None]:
     # TODO: 检查系统服务是否正常
     return UtilResponse(code=Errcode.SUCCESS, message="服务正常")
 
@@ -36,7 +36,7 @@ async def health() -> UtilResponse:
     description="获取当前MCP服务器中所有带有指定标签的工具列表，返回工具名称、描述和标签信息。",
     tags={"sys_tool"}
 )
-async def get_tools_by_tag(tag: str, ctx: Context) -> UtilResponse:
+async def get_tools_by_tag(tag: str, ctx: Context) -> UtilResponse[list[str]]:
     """
     根据标签筛选已注册的工具。
 
@@ -81,7 +81,7 @@ async def get_all_config(reload: bool = False) -> MCPSettings:
     description="添加数据库配置",
     tags={"config_tool"}
 )
-async def add_database(db_name: str, db_config: Dict[str, Any]) -> UtilResponse:
+async def add_database(db_name: str, db_config: Dict[str, Any]) -> UtilResponse[None]:
     """
     添加数据库配置
 
@@ -105,7 +105,7 @@ async def add_database(db_name: str, db_config: Dict[str, Any]) -> UtilResponse:
     description="添加缓存配置",
     tags={"config_tool"}
 )
-async def add_cache(cache_name: str, cache_config: Dict[str, Any]) -> UtilResponse:
+async def add_cache(cache_name: str, cache_config: Dict[str, Any]) -> UtilResponse[None]:
     """
     添加缓存配置
 
@@ -129,7 +129,7 @@ async def add_cache(cache_name: str, cache_config: Dict[str, Any]) -> UtilRespon
     description="更新数据库配置",
     tags={"config_tool"}
 )
-async def update_database(db_name: str, db_config: Dict[str, Any]) -> UtilResponse:
+async def update_database(db_name: str, db_config: Dict[str, Any]) -> UtilResponse[None]:
     """
     更新数据库配置
 
@@ -159,7 +159,7 @@ async def update_database(db_name: str, db_config: Dict[str, Any]) -> UtilRespon
     description="更新缓存配置",
     tags={"config_tool"}
 )
-async def update_cache(cache_name: str, cache_config: Dict[str, Any]) -> UtilResponse:
+async def update_cache(cache_name: str, cache_config: Dict[str, Any]) -> UtilResponse[None]:
     """
     更新缓存配置
 
@@ -189,7 +189,7 @@ async def update_cache(cache_name: str, cache_config: Dict[str, Any]) -> UtilRes
     description="删除数据库配置",
     tags={"config_tool"}
 )
-async def delete_database(db_name: str) -> UtilResponse:
+async def delete_database(db_name: str) -> UtilResponse[None]:
     """
     删除数据库配置
 
@@ -212,7 +212,7 @@ async def delete_database(db_name: str) -> UtilResponse:
     description="删除缓存配置",
     tags={"config_tool"}
 )
-async def delete_cache(cache_name: str) -> UtilResponse:
+async def delete_cache(cache_name: str) -> UtilResponse[None]:
     """
     删除缓存配置
 

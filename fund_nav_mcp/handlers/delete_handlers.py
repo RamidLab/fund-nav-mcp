@@ -50,7 +50,7 @@ class DeleteHandler(CodeResolveMixin):
 
     async def handle(
             self, orm_model: Type[Base], data: BaseModel, db_name: str = "default",
-    ) -> UtilResponse:
+    ) -> UtilResponse[dict[str, int]]:
         """
         删除单条 ORM 记录。
 
@@ -277,7 +277,9 @@ class DeleteHandler(CodeResolveMixin):
         return None
 
     @staticmethod
-    async def handle_batch(orm_model: Type[Base], ids: List[int], db_name: str = "default") -> UtilResponse:
+    async def handle_batch(
+            orm_model: Type[Base], ids: List[int], db_name: str = "default"
+    ) -> UtilResponse[dict[str, Any]]:
         """
         批量删除 ORM 记录。
 

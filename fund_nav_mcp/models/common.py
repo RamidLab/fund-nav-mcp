@@ -1,11 +1,13 @@
 __all__ = ["UtilResponse"]
 
-from typing import Any, Optional
+from typing import Optional, TypeVar, Generic
 
 from pydantic import BaseModel
 
+T = TypeVar("T")
 
-class UtilResponse(BaseModel):
+
+class UtilResponse(BaseModel, Generic[T]):
     """
     统一接口返回格式的数据模型。
 
@@ -19,4 +21,4 @@ class UtilResponse(BaseModel):
     """
     code: int
     message: str
-    data: Optional[Any] = None
+    data: Optional[T] = None

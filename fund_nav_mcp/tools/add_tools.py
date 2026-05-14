@@ -29,7 +29,7 @@ from fund_nav_mcp.models.pydantic.fund import (
 
 async def _handle_add(
         orm_model: Type[Base], data: BaseModel, db_name: str = "default"
-) -> UtilResponse:
+) -> UtilResponse[dict[str, int]]:
     """
     添加单条 ORM 模型实例
 
@@ -47,7 +47,7 @@ async def _handle_add(
 
 async def _handle_add_batch(
         orm_model: Type[Base], data_list: List[BaseModel], db_name: str = "default"
-) -> UtilResponse:
+) -> UtilResponse[dict[str, list[int]]]:
     """
     批量添加多条 ORM 模型实例
 
@@ -71,7 +71,7 @@ async def _handle_add_batch(
     description="添加单条基金产品记录",
     tags={"fund_tool"}
 )
-async def add_fund(data: FundCreate, db_name: str = "default") -> UtilResponse:
+async def add_fund(data: FundCreate, db_name: str = "default") -> UtilResponse[dict[str, int]]:
     """添加单条基金产品"""
     return await _handle_add(Fund, data, db_name)
 
@@ -82,7 +82,7 @@ async def add_fund(data: FundCreate, db_name: str = "default") -> UtilResponse:
     description="批量添加多条基金产品记录",
     tags={"fund_tool"}
 )
-async def add_funds(data_list: List[FundCreate], db_name: str = "default") -> UtilResponse:
+async def add_funds(data_list: List[FundCreate], db_name: str = "default") -> UtilResponse[dict[str, list[int]]]:
     """批量添加基金产品"""
     return await _handle_add_batch(Fund, data_list, db_name)
 
@@ -95,7 +95,7 @@ async def add_funds(data_list: List[FundCreate], db_name: str = "default") -> Ut
     description="添加单条基金管理人（机构）记录",
     tags={"fund_tool"}
 )
-async def add_fund_manager(data: FundManagerCreate, db_name: str = "default") -> UtilResponse:
+async def add_fund_manager(data: FundManagerCreate, db_name: str = "default") -> UtilResponse[dict[str, int]]:
     """添加单条基金管理人（机构）"""
     return await _handle_add(FundManager, data, db_name)
 
@@ -106,7 +106,9 @@ async def add_fund_manager(data: FundManagerCreate, db_name: str = "default") ->
     description="批量添加多条基金管理人（机构）记录",
     tags={"fund_tool"}
 )
-async def add_fund_managers(data_list: List[FundManagerCreate], db_name: str = "default") -> UtilResponse:
+async def add_fund_managers(
+        data_list: List[FundManagerCreate], db_name: str = "default"
+) -> UtilResponse[dict[str, list[int]]]:
     """批量添加基金管理人（机构）"""
     return await _handle_add_batch(FundManager, data_list, db_name)
 
@@ -119,7 +121,9 @@ async def add_fund_managers(data_list: List[FundManagerCreate], db_name: str = "
     description="添加单条基金管理人（个人）记录",
     tags={"fund_tool"}
 )
-async def add_fund_manager_person(data: FundManagerPersonCreate, db_name: str = "default") -> UtilResponse:
+async def add_fund_manager_person(
+        data: FundManagerPersonCreate, db_name: str = "default"
+) -> UtilResponse[dict[str, int]]:
     """添加单条基金管理人（个人）"""
     return await _handle_add(FundManagerPerson, data, db_name)
 
@@ -130,7 +134,9 @@ async def add_fund_manager_person(data: FundManagerPersonCreate, db_name: str = 
     description="批量添加多条基金管理人（个人）记录",
     tags={"fund_tool"}
 )
-async def add_fund_manager_persons(data_list: List[FundManagerPersonCreate], db_name: str = "default") -> UtilResponse:
+async def add_fund_manager_persons(
+        data_list: List[FundManagerPersonCreate], db_name: str = "default"
+) -> UtilResponse[dict[str, list[int]]]:
     """批量添加基金管理人（个人）"""
     return await _handle_add_batch(FundManagerPerson, data_list, db_name)
 
@@ -143,7 +149,7 @@ async def add_fund_manager_persons(data_list: List[FundManagerPersonCreate], db_
     description="添加单条基金分类记录",
     tags={"fund_tool"}
 )
-async def add_fund_category(data: FundCategoryCreate, db_name: str = "default") -> UtilResponse:
+async def add_fund_category(data: FundCategoryCreate, db_name: str = "default") -> UtilResponse[dict[str, int]]:
     """添加单条基金分类"""
     return await _handle_add(FundCategory, data, db_name)
 
@@ -154,7 +160,9 @@ async def add_fund_category(data: FundCategoryCreate, db_name: str = "default") 
     description="批量添加多条基金分类记录",
     tags={"fund_tool"}
 )
-async def add_fund_categories(data_list: List[FundCategoryCreate], db_name: str = "default") -> UtilResponse:
+async def add_fund_categories(
+        data_list: List[FundCategoryCreate], db_name: str = "default"
+) -> UtilResponse[dict[str, list[int]]]:
     """批量添加基金分类"""
     return await _handle_add_batch(FundCategory, data_list, db_name)
 
@@ -167,7 +175,9 @@ async def add_fund_categories(data_list: List[FundCategoryCreate], db_name: str 
     description="添加单条基金分类映射记录",
     tags={"fund_tool"}
 )
-async def add_fund_category_mapping(data: FundCategoryMappingCreate, db_name: str = "default") -> UtilResponse:
+async def add_fund_category_mapping(
+        data: FundCategoryMappingCreate, db_name: str = "default"
+) -> UtilResponse[dict[str, int]]:
     """添加单条基金分类映射"""
     return await _handle_add(FundCategoryMapping, data, db_name)
 
@@ -178,8 +188,9 @@ async def add_fund_category_mapping(data: FundCategoryMappingCreate, db_name: st
     description="批量添加多条基金分类映射记录",
     tags={"fund_tool"}
 )
-async def add_fund_category_mappings(data_list: List[FundCategoryMappingCreate],
-                                     db_name: str = "default") -> UtilResponse:
+async def add_fund_category_mappings(
+        data_list: List[FundCategoryMappingCreate], db_name: str = "default"
+) -> UtilResponse[dict[str, list[int]]]:
     """批量添加基金分类映射"""
     return await _handle_add_batch(FundCategoryMapping, data_list, db_name)
 
@@ -192,7 +203,7 @@ async def add_fund_category_mappings(data_list: List[FundCategoryMappingCreate],
     description="添加单条基金净值记录",
     tags={"fund_tool"}
 )
-async def add_fund_nav(data: FundNavCreate, db_name: str = "default") -> UtilResponse:
+async def add_fund_nav(data: FundNavCreate, db_name: str = "default") -> UtilResponse[dict[str, int]]:
     """添加单条基金净值"""
     return await _handle_add(FundNav, data, db_name)
 
@@ -203,7 +214,9 @@ async def add_fund_nav(data: FundNavCreate, db_name: str = "default") -> UtilRes
     description="批量添加多条基金净值记录",
     tags={"fund_tool"}
 )
-async def add_fund_navs(data_list: List[FundNavCreate], db_name: str = "default") -> UtilResponse:
+async def add_fund_navs(
+        data_list: List[FundNavCreate], db_name: str = "default"
+) -> UtilResponse[dict[str, list[int]]]:
     """批量添加基金净值"""
     return await _handle_add_batch(FundNav, data_list, db_name)
 
@@ -216,7 +229,7 @@ async def add_fund_navs(data_list: List[FundNavCreate], db_name: str = "default"
     description="添加单条基金收益率记录",
     tags={"fund_tool"}
 )
-async def add_fund_return(data: FundReturnCreate, db_name: str = "default") -> UtilResponse:
+async def add_fund_return(data: FundReturnCreate, db_name: str = "default") -> UtilResponse[dict[str, int]]:
     """添加单条基金收益率"""
     return await _handle_add(FundReturn, data, db_name)
 
@@ -227,7 +240,9 @@ async def add_fund_return(data: FundReturnCreate, db_name: str = "default") -> U
     description="批量添加多条基金收益率记录",
     tags={"fund_tool"}
 )
-async def add_fund_returns(data_list: List[FundReturnCreate], db_name: str = "default") -> UtilResponse:
+async def add_fund_returns(
+        data_list: List[FundReturnCreate], db_name: str = "default"
+) -> UtilResponse[dict[str, list[int]]]:
     """批量添加基金收益率"""
     return await _handle_add_batch(FundReturn, data_list, db_name)
 
@@ -240,7 +255,7 @@ async def add_fund_returns(data_list: List[FundReturnCreate], db_name: str = "de
     description="添加单条基金持仓记录",
     tags={"fund_tool"}
 )
-async def add_fund_holding(data: FundHoldingCreate, db_name: str = "default") -> UtilResponse:
+async def add_fund_holding(data: FundHoldingCreate, db_name: str = "default") -> UtilResponse[dict[str, int]]:
     """添加单条基金持仓"""
     return await _handle_add(FundHolding, data, db_name)
 
@@ -251,6 +266,8 @@ async def add_fund_holding(data: FundHoldingCreate, db_name: str = "default") ->
     description="批量添加多条基金持仓记录",
     tags={"fund_tool"}
 )
-async def add_fund_holdings(data_list: List[FundHoldingCreate], db_name: str = "default") -> UtilResponse:
+async def add_fund_holdings(
+        data_list: List[FundHoldingCreate], db_name: str = "default"
+) -> UtilResponse[dict[str, list[int]]]:
     """批量添加基金持仓"""
     return await _handle_add_batch(FundHolding, data_list, db_name)

@@ -126,7 +126,7 @@ class MCPSettings(BaseSettings):
         else:
             raise ValueError(f"未知配置类型: {type(config)}")
 
-    def _add_config(self, name: str, config: Union[DatabaseConfig, CacheConfig]) -> UtilResponse:
+    def _add_config(self, name: str, config: Union[DatabaseConfig, CacheConfig]) -> UtilResponse[None]:
         """
         添加配置项
 
@@ -145,7 +145,7 @@ class MCPSettings(BaseSettings):
 
     def _update_config(
             self, name: str, config: Union[DatabaseConfig, CacheConfig], new_name: Optional[str]
-    ) -> UtilResponse:
+    ) -> UtilResponse[None]:
         """
         更新配置项
 
@@ -172,7 +172,7 @@ class MCPSettings(BaseSettings):
         storage[name] = config
         return UtilResponse(code=Errcode.SUCCESS, message=f"{config_type}配置 {name} 修改成功")
 
-    def _delete_config(self, _class: Literal["db", "cache"], name: str) -> UtilResponse:
+    def _delete_config(self, _class: Literal["db", "cache"], name: str) -> UtilResponse[None]:
         """
         删除配置项
 
@@ -195,32 +195,36 @@ class MCPSettings(BaseSettings):
         else:
             return UtilResponse(code=Errcode.TOOL_INVALID_PARAMS, message=f"未知配置类型: {_class}")
 
-    def add_database(self, db_name: str, db_config: DatabaseConfig) -> UtilResponse:
+    def add_database(self, db_name: str, db_config: DatabaseConfig) -> UtilResponse[None]:
         """添加数据库配置"""
         return self._add_config(db_name, db_config)
 
-    def update_database(self, db_name: str, db_config: DatabaseConfig, new_db_name: str = None) -> UtilResponse:
+    def update_database(self, db_name: str, db_config: DatabaseConfig, new_db_name: str = None) -> UtilResponse[None]:
         """更新数据库配置"""
         return self._update_config(db_name, db_config, new_db_name)
 
-    def delete_database(self, db_name: str) -> UtilResponse:
+    def delete_database(self, db_name: str) -> UtilResponse[None]:
         """删除数据库配置"""
         return self._delete_config("db", db_name)
 
-    def add_cache(self, cache_name: str, cache_config: CacheConfig) -> UtilResponse:
+    def add_cache(self, cache_name: str, cache_config: CacheConfig) -> UtilResponse[None]:
         """添加缓存配置"""
         return self._add_config(cache_name, cache_config)
 
-    def update_cache(self, cache_name: str, cache_config: CacheConfig, new_cache_name: str = None) -> UtilResponse:
+    def update_cache(
+            self, cache_name: str, cache_config: CacheConfig, new_cache_name: str = None
+    ) -> UtilResponse[None]:
         """更新缓存配置"""
         return self._update_config(cache_name, cache_config, new_cache_name)
 
-    def delete_cache(self, cache_name: str) -> UtilResponse:
+    def delete_cache(self, cache_name: str) -> UtilResponse[None]:
         """删除缓存配置"""
         return self._delete_config("cache", cache_name)
 
     @staticmethod
-    def test_connection(config: Union[DatabaseConfig, CacheConfig]) -> UtilResponse:
+    def test_connection(
+            config: Union[DatabaseConfig, CacheConfig]
+    ) -> UtilResponse[Union[DatabaseConfig, CacheConfig]]:
         """
         测试数据库或缓存连接。
 

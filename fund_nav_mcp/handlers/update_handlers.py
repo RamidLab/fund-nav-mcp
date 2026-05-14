@@ -21,11 +21,8 @@ class UpdateHandler(CodeResolveMixin):
 
     async def handle(
             self,
-            orm_model: Type[Base],
-            data: BaseModel,
-            record_id: Optional[int],
-            db_name: str = "default",
-    ) -> UtilResponse:
+            orm_model: Type[Base], data: BaseModel, record_id: Optional[int], db_name: str = "default",
+    ) -> UtilResponse[dict[str, int]]:
         """
         更新单条 ORM 记录。
 
@@ -76,11 +73,8 @@ class UpdateHandler(CodeResolveMixin):
 
     async def handle_batch(
             self,
-            orm_model: Type[Base],
-            ids: List[int],
-            data_list: List[BaseModel],
-            db_name: str = "default",
-    ) -> UtilResponse:
+            orm_model: Type[Base], ids: List[int], data_list: List[BaseModel], db_name: str = "default",
+    ) -> UtilResponse[dict[str, Any]]:
         """
         批量更新 ORM 记录。
 
