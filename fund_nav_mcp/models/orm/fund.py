@@ -77,9 +77,9 @@ class FundNav(Base):
 
     fund_id: Mapped[int] = mapped_column(Integer, comment='基金产品ID，关联fund表的ID')
     nav_date: Mapped[date] = mapped_column(Date, comment='净值日期')
-    unit_nav: Mapped[float] = mapped_column(DECIMAL(10, 4), comment='单位净值')
-    acc_nav: Mapped[Optional[float]] = mapped_column(DECIMAL(10, 4), comment='累计净值')
-    adj_nav: Mapped[Optional[float]] = mapped_column(DECIMAL(10, 4), comment='复权净值')
+    nav_unit: Mapped[float] = mapped_column(DECIMAL(10, 4), comment='单位净值')
+    nav_acc: Mapped[Optional[float]] = mapped_column(DECIMAL(10, 4), comment='累计净值')
+    nav_adj: Mapped[Optional[float]] = mapped_column(DECIMAL(10, 4), comment='复权净值')
     daily_return_rate: Mapped[Optional[float]] = mapped_column(DECIMAL(10, 4), comment='日增长率')
     nav_status: Mapped[FundNavStatus] = mapped_column(Integer, comment='净值状态')
     data_source: Mapped[FundDataSource] = mapped_column(Integer, comment='数据来源')

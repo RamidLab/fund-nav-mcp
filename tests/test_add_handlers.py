@@ -267,9 +267,9 @@ async def test_add_fund_nav(handler_db, seeded_fund: Fund) -> None:
     data = FundNavCreate(
         fund_code=seeded_fund.fund_code,
         nav_date=date(2025, 7, 1),
-        unit_nav=Decimal("1.5000"),
-        acc_nav=Decimal("2.8000"),
-        adj_nav=Decimal("1.5500"),
+        nav_unit=Decimal("1.5000"),
+        nav_acc=Decimal("2.8000"),
+        nav_adj=Decimal("1.5500"),
         daily_return_rate=Decimal("0.0035"),
         nav_status=FundNavStatus.Valid,
         data_source=FundDataSource.ManualImport,

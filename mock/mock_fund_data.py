@@ -229,17 +229,17 @@ async def generate_fund_nav_data(fund_ids: List[int]) -> List[Dict[str, Any]]:
         while current_date <= end_date:
             # 跳过周末，简单模拟只取工作日
             if current_date.weekday() < 5:
-                unit_nav = Decimal(random.uniform(0.8, 2.5)).quantize(Decimal("0.0001"))
-                acc_nav = unit_nav + Decimal(random.uniform(0, 0.5)).quantize(Decimal("0.0001"))
-                adj_nav = unit_nav
+                nav_unit = Decimal(random.uniform(0.8, 2.5)).quantize(Decimal("0.0001"))
+                nav_acc = nav_unit + Decimal(random.uniform(0, 0.5)).quantize(Decimal("0.0001"))
+                nav_adj = nav_unit
                 daily_return = Decimal(random.uniform(-0.05, 0.05)).quantize(Decimal("0.0001"))
                 navs.append({
                     "id": nav_id,
                     "fund_id": fund_id,
                     "nav_date": current_date,
-                    "unit_nav": unit_nav,
-                    "acc_nav": acc_nav,
-                    "adj_nav": adj_nav,
+                    "nav_unit": nav_unit,
+                    "nav_acc": nav_acc,
+                    "nav_adj": nav_adj,
                     "daily_return_rate": daily_return,
                     "nav_status": random.choice(list(FundNavStatus.__members__.values())),
                     "data_source": random.choice(list(FundDataSource.__members__.values())),
@@ -437,9 +437,9 @@ def _build_tags_fields(table_name: str, row: Dict[str, Any]) -> Tuple[Dict[str, 
                 row.get("data_source", "")),
         }
         fields = {
-            "unit_nav": float(row["unit_nav"]) if row.get("unit_nav") else 0.0,
-            "acc_nav": float(row["acc_nav"]) if row.get("acc_nav") else 0.0,
-            "adj_nav": float(row["adj_nav"]) if row.get("adj_nav") else 0.0,
+            "nav_unit": float(row["nav_unit"]) if row.get("nav_unit") else 0.0,
+            "nav_acc": float(row["nav_acc"]) if row.get("nav_acc") else 0.0,
+            "nav_adj": float(row["nav_adj"]) if row.get("nav_adj") else 0.0,
             "daily_return_rate": float(row["daily_return_rate"]) if row.get("daily_return_rate") else 0.0,
         }
 

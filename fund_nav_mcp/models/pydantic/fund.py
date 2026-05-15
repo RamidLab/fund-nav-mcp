@@ -13,7 +13,7 @@ __all__ = [
 ]
 
 import re
-from datetime import date, datetime
+from datetime import datetime
 from decimal import Decimal
 from functools import lru_cache
 from typing import List, Optional
@@ -26,6 +26,7 @@ from fund_nav_mcp.models.pydantic.fund_validators import (
     FundManagerValidators, FundManagerPersonValidators, FundCategoryValidators,
     FundCategoryMappingValidators,
 )
+from fund_nav_mcp.utils.common import to_date_flexible
 from fund_nav_mcp.utils.enums import (
     FundNavStatus, FundStatus, FundType, FundRegulatoryType, PeriodType,
     FundDataSource, FundManagementType, ManagementScaleRange, ShareClass,
@@ -225,8 +226,8 @@ class FundBase(FundValidators, BaseModel):
     fund_management_type: FundManagementType = Field(..., title="基金管理类型")
     fund_custodian: Optional[str] = Field(default=None, title="基金托管人", max_length=100)
     fund_registration_address: Optional[str] = Field(default=None, title="注册地址", max_length=100)
-    establishment_date: date = Field(..., title="成立日期")
-    registration_date: date = Field(..., title="备案日期")
+    establishment_date: str = Field(..., title="成立日期")
+    registration_date: str = Field(..., title="备案日期")
     status: FundStatus = Field(..., title="基金状态")
     share_class: ShareClass = Field(default=ShareClass.NotApplicable, title="份额类别")
     parent_fund_code: Optional[str] = Field(default=None, max_length=20, title="父基金代码")
@@ -234,7 +235,11 @@ class FundBase(FundValidators, BaseModel):
     @model_validator(mode="after")
     def _validate_fund_consistency(self) -> "FundBase":
         self._validate_fund_code(self.fund_code, self.fund_regulatory_type)
-        if self.establishment_date > self.registration_date:
+
+        establishment_date = to_date_flexible(self.establishment_date)
+        registration_date = to_date_flexible(self.registration_date)
+
+        if establishment_date > registration_date:
             raise ValueError(
                 f"成立日期 ({self.establishment_date}) 不能晚于备案日期 ({self.registration_date})"
             )
@@ -286,8 +291,8 @@ class FundUpdate(FundValidators, BaseModel):
     fund_management_type: Optional[FundManagementType] = Field(default=None, description='基金管理类型')
     fund_custodian: Optional[str] = Field(default=None, max_length=100, description='基金托管人')
     fund_registration_address: Optional[str] = Field(default=None, max_length=100, description='注册地址')
-    establishment_date: Optional[date] = Field(default=None, description='成立日期')
-    registration_date: Optional[date] = Field(default=None, description='备案日期')
+    establishment_date: Optional[str] = Field(default=None, description='成立日期')
+    registration_date: Optional[str] = Field(default=None, description='备案日期')
     status: Optional[FundStatus] = Field(default=None, description='基金状态')
     share_class: Optional[ShareClass] = Field(default=None, description='份额类别')
     parent_fund_code: Optional[str] = Field(default=None, max_length=20, description='父基金代码')
@@ -343,10 +348,10 @@ class FundResponse(FundBase):
 
 class FundNavBase(FundNavValidators, BaseModel):
     fund_code: str = Field(..., max_length=20, description='基金代码')
-    nav_date: date = Field(..., description='净值日期')
-    unit_nav: Decimal = Field(..., max_digits=10, decimal_places=4, description='单位净值')
-    acc_nav: Optional[Decimal] = Field(None, max_digits=10, decimal_places=4, description='累计净值')
-    adj_nav: Optional[Decimal] = Field(None, max_digits=10, decimal_places=4, description='复权净值')
+    nav_date: str = Field(..., description='净值日期')
+    nav_unit: Decimal = Field(..., max_digits=10, decimal_places=4, description='单位净值')
+    nav_acc: Optional[Decimal] = Field(None, max_digits=10, decimal_places=4, description='累计净值')
+    nav_adj: Optional[Decimal] = Field(None, max_digits=10, decimal_places=4, description='复权净值')
     daily_return_rate: Optional[Decimal] = Field(None, max_digits=10, decimal_places=4, description='日增长率')
     nav_status: FundNavStatus = Field(..., description='净值状态')
     data_source: FundDataSource = Field(..., description='数据来源')
@@ -358,10 +363,10 @@ class FundNavCreate(FundNavBase):
 
 class FundNavUpdate(FundNavValidators, BaseModel):
     fund_code: Optional[str] = Field(None, max_length=20, description='基金代码')
-    nav_date: Optional[date] = Field(None, description='净值日期')
-    unit_nav: Optional[Decimal] = Field(None, max_digits=10, decimal_places=4, description='单位净值')
-    acc_nav: Optional[Decimal] = Field(None, max_digits=10, decimal_places=4, description='累计净值')
-    adj_nav: Optional[Decimal] = Field(None, max_digits=10, decimal_places=4, description='复权净值')
+    nav_date: Optional[str] = Field(None, description='净值日期')
+    nav_unit: Optional[Decimal] = Field(None, max_digits=10, decimal_places=4, description='单位净值')
+    nav_acc: Optional[Decimal] = Field(None, max_digits=10, decimal_places=4, description='累计净值')
+    nav_adj: Optional[Decimal] = Field(None, max_digits=10, decimal_places=4, description='复权净值')
     daily_return_rate: Optional[Decimal] = Field(None, max_digits=10, decimal_places=4, description='日增长率')
     nav_status: Optional[FundNavStatus] = Field(None, description='净值状态')
     data_source: Optional[FundDataSource] = Field(None, description='数据来源')
@@ -370,7 +375,7 @@ class FundNavUpdate(FundNavValidators, BaseModel):
 class FundNavDelete(BaseDeleteModel):
     """删除基金净值 — 通过 record_id，或 fund_code + nav_date 定位记录"""
     fund_code: Optional[str] = Field(default=None, max_length=20, description='基金代码')
-    nav_date: Optional[date] = Field(default=None, description='净值日期')
+    nav_date: Optional[str] = Field(default=None, description='净值日期')
 
     @field_validator("fund_code")
     @classmethod
@@ -405,7 +410,7 @@ class FundReturnBase(FundReturnValidators, BaseModel):
     return_rate: Decimal = Field(..., max_digits=10, decimal_places=4, description='收益率')
     rank: int = Field(..., description='同类排名')
     total_funds: int = Field(..., description='同类总数')
-    calculation_date: date = Field(..., description='计算日期')
+    calculation_date: str = Field(..., description='计算日期')
 
 
 class FundReturnCreate(FundReturnBase):
@@ -418,14 +423,14 @@ class FundReturnUpdate(FundReturnValidators, BaseModel):
     return_rate: Optional[Decimal] = Field(None, max_digits=10, decimal_places=4, description='收益率')
     rank: Optional[int] = Field(None, description='同类排名')
     total_funds: Optional[int] = Field(None, description='同类总数')
-    calculation_date: Optional[date] = Field(None, description='计算日期')
+    calculation_date: Optional[str] = Field(None, description='计算日期')
 
 
 class FundReturnDelete(BaseDeleteModel):
     """删除基金收益率 — 通过 record_id，或 fund_code + period_type + calculation_date 定位记录"""
     fund_code: Optional[str] = Field(default=None, max_length=20, description='基金代码')
     period_type: Optional[PeriodType] = Field(default=None, description='周期类型')
-    calculation_date: Optional[date] = Field(default=None, description='计算日期')
+    calculation_date: Optional[str] = Field(default=None, description='计算日期')
 
     @field_validator("fund_code")
     @classmethod
@@ -458,7 +463,7 @@ class FundReturnResponse(FundReturnBase):
 
 class FundHoldingBase(FundHoldingValidators, BaseModel):
     fund_code: str = Field(..., max_length=20, description='基金代码')
-    report_date: date = Field(..., description='报告日期')
+    report_date: str = Field(..., description='报告日期')
     stock_code: str = Field(..., max_length=20, description='股票代码')
     stock_name: str = Field(..., max_length=100, description='股票名称')
     holding_ratio: Decimal = Field(..., max_digits=6, decimal_places=4, description='持仓比例')
@@ -473,7 +478,7 @@ class FundHoldingCreate(FundHoldingBase):
 class FundHoldingUpdate(FundHoldingValidators, BaseModel):
     fund_id: Optional[int] = Field(None, description='基金ID')
     fund_code: Optional[str] = Field(None, max_length=20, description='基金代码（与 fund_id 二选一）')
-    report_date: Optional[date] = Field(None, description='报告日期')
+    report_date: Optional[str] = Field(None, description='报告日期')
     stock_code: Optional[str] = Field(None, max_length=20, description='股票代码')
     stock_name: Optional[str] = Field(None, max_length=100, description='股票名称')
     holding_ratio: Optional[Decimal] = Field(None, max_digits=6, decimal_places=4, description='持仓比例')
@@ -484,7 +489,7 @@ class FundHoldingUpdate(FundHoldingValidators, BaseModel):
 class FundHoldingDelete(BaseDeleteModel):
     """删除基金持仓 — 通过 record_id，或 fund_code + report_date + stock_code 定位记录"""
     fund_code: Optional[str] = Field(default=None, max_length=20, description='基金代码')
-    report_date: Optional[date] = Field(default=None, description='报告日期')
+    report_date: Optional[str] = Field(default=None, description='报告日期')
     stock_code: Optional[str] = Field(default=None, max_length=20, description='股票代码')
 
     @field_validator("fund_code", "stock_code")
@@ -521,7 +526,7 @@ class FundManagerBase(FundManagerValidators, BaseModel):
     short_name: Optional[str] = Field(None, max_length=50, description='公司简称')
     unified_code: Optional[str] = Field(None, max_length=18, description='统一社会信用代码')
     amac_registration_number: Optional[str] = Field(None, max_length=20, description='中基协登记编号')
-    amac_registration_date: Optional[date] = Field(None, description='登记时间')
+    amac_registration_date: Optional[str] = Field(None, description='登记时间')
     organization_type: Optional[str] = Field(None, max_length=50, description='机构类型')
     business_type: Optional[str] = Field(None, max_length=200, description='业务类型')
     registered_capital: Optional[Decimal] = Field(None, max_digits=15, decimal_places=2, description='注册资本（万元）')
@@ -547,7 +552,7 @@ class FundManagerUpdate(FundManagerValidators, BaseModel):
     short_name: Optional[str] = Field(None, max_length=50, description='公司简称')
     unified_code: Optional[str] = Field(None, max_length=18, description='统一社会信用代码')
     amac_registration_number: Optional[str] = Field(None, max_length=20, description='中基协登记编号')
-    amac_registration_date: Optional[date] = Field(None, description='登记时间')
+    amac_registration_date: Optional[str] = Field(None, description='登记时间')
     organization_type: Optional[str] = Field(None, max_length=50, description='机构类型')
     business_type: Optional[str] = Field(None, max_length=200, description='业务类型')
     registered_capital: Optional[Decimal] = Field(None, max_digits=15, decimal_places=2, description='注册资本（万元）')
@@ -600,7 +605,7 @@ class FundManagerResponse(FundManagerBase):
 class FundManagerPersonBase(FundManagerPersonValidators, BaseModel):
     name: str = Field(..., max_length=50, description='姓名')
     gender: Optional[str] = Field(None, max_length=10, description='性别')
-    birth_date: Optional[date] = Field(None, description='出生日期')
+    birth_date: Optional[str] = Field(None, description='出生日期')
     education: Optional[str] = Field(None, max_length=50, description='学历')
     qualification_number: Optional[str] = Field(None, max_length=50, description='基金从业资格证号')
     is_qualified: bool = Field(True, description='是否有基金从业资格')
@@ -615,7 +620,7 @@ class FundManagerPersonCreate(FundManagerPersonBase):
 class FundManagerPersonUpdate(FundManagerPersonValidators, BaseModel):
     name: Optional[str] = Field(None, max_length=50, description='姓名')
     gender: Optional[str] = Field(None, max_length=10, description='性别')
-    birth_date: Optional[date] = Field(None, description='出生日期')
+    birth_date: Optional[str] = Field(None, description='出生日期')
     education: Optional[str] = Field(None, max_length=50, description='学历')
     qualification_number: Optional[str] = Field(None, max_length=50, description='基金从业资格证号')
     is_qualified: Optional[bool] = Field(None, description='是否有基金从业资格')

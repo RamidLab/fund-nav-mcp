@@ -49,6 +49,8 @@ class AddHandler(CodeResolveMixin):
         data_list = await self._resolve_fk_codes(orm_model, data_list, db_name)
         # 3) 名称兜底解析（由基类提供）
         data_list = await self._resolve_names(data_list, db_name)
+        # 4) 时间字段处理
+        data_list = self._conv_date_fields(data_list)
 
         raw = data_list[0]
         mgr = (await get_manager("db", db_name))["mgr"]

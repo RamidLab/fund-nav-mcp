@@ -254,7 +254,7 @@ class TestFundNavTable:
         cols = {c.name for c in table.columns}
         expected = {
             "id", "created_at", "updated_at",
-            "fund_id", "nav_date", "unit_nav", "acc_nav", "adj_nav",
+            "fund_id", "nav_date", "nav_unit", "nav_acc", "nav_adj",
             "daily_return_rate", "nav_status", "data_source",
         }
         assert expected.issubset(cols)
@@ -289,9 +289,9 @@ class TestFundNavCRUD:
         data: Dict[str, Any] = {
             "fund_id": fund["id"],
             "nav_date": date(2024, 1, 15),
-            "unit_nav": 1.2345,
-            "acc_nav": 1.5678,
-            "adj_nav": 1.8901,
+            "nav_unit": 1.2345,
+            "nav_acc": 1.5678,
+            "nav_adj": 1.8901,
             "daily_return_rate": 0.0123,
             "nav_status": FundNavStatus.Valid,
             "data_source": FundDataSource.Api,
@@ -311,7 +311,7 @@ class TestFundNavCRUD:
     @pytest.mark.asyncio
     async def test_insert_nav(self, db_manager):
         data, row = await self._insert_nav(db_manager)
-        assert float(row["unit_nav"]) == pytest.approx(data["unit_nav"])
+        assert float(row["nav_unit"]) == pytest.approx(data["nav_unit"])
 
     @pytest.mark.asyncio
     async def test_duplicate_fund_nav_date_fails(self, db_manager):
@@ -320,7 +320,7 @@ class TestFundNavCRUD:
         table = Base.metadata.tables["fund_nav"]
         base = {
             "fund_id": fund["id"], "nav_date": date(2024, 2, 1),
-            "unit_nav": 1.0, "acc_nav": 1.1,
+            "nav_unit": 1.0, "nav_acc": 1.1,
             "nav_status": FundNavStatus.Valid,
             "data_source": FundDataSource.ManualImport,
         }
@@ -335,18 +335,18 @@ class TestFundNavCRUD:
         with pytest.raises(sa_exc.IntegrityError):
             await db_manager.execute(insert(table).values(
                 fund_id=99999, nav_date=date(2024, 1, 1),
-                unit_nav=1.0, nav_status=FundNavStatus.Valid,
+                nav_unit=1.0, nav_status=FundNavStatus.Valid,
                 data_source=FundDataSource.Api,
             ))
 
     @pytest.mark.asyncio
     async def test_nullable_nav_fields(self, db_manager):
-        """acc_nav / adj_nav / daily_return_rate 可为空"""
+        """nav_acc / nav_adj / daily_return_rate 可为空"""
         data, row = await self._insert_nav(
-            db_manager, acc_nav=None, adj_nav=None, daily_return_rate=None,
+            db_manager, nav_acc=None, nav_adj=None, daily_return_rate=None,
         )
-        assert row["acc_nav"] is None
-        assert row["adj_nav"] is None
+        assert row["nav_acc"] is None
+        assert row["nav_adj"] is None
         assert row["daily_return_rate"] is None
 
     @pytest.mark.asyncio
@@ -356,7 +356,7 @@ class TestFundNavCRUD:
         dates = [date(2024, 1, d) for d in (10, 15, 20)]
         for d in dates:
             await db_manager.execute(insert(table).values(
-                fund_id=fund["id"], nav_date=d, unit_nav=1.0, acc_nav=1.1,
+                fund_id=fund["id"], nav_date=d, nav_unit=1.0, nav_acc=1.1,
                 nav_status=FundNavStatus.Valid, data_source=FundDataSource.Api,
             ))
         rows = await db_manager.fetch_all(
@@ -745,7 +745,7 @@ class TestNavStatusCoverage:
             await db_manager.execute(insert(table).values(
                 fund_id=fund["id"],
                 nav_date=d.replace(day=i + 1 if i + 1 <= 28 else 1),
-                unit_nav=1.0, acc_nav=1.1,
+                nav_unit=1.0, nav_acc=1.1,
                 nav_status=ns,
                 data_source=FundDataSource.Api,
             ))
@@ -766,7 +766,7 @@ class TestDataSourceCoverage:
             await db_manager.execute(insert(table).values(
                 fund_id=fund["id"],
                 nav_date=date(2024, 1, i + 1 if i + 1 <= 28 else 1),
-                unit_nav=1.0, acc_nav=1.1,
+                nav_unit=1.0, nav_acc=1.1,
                 nav_status=FundNavStatus.Valid,
                 data_source=ds,
             ))

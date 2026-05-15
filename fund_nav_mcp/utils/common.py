@@ -1,6 +1,9 @@
-__all__ = ["check_result"]
+__all__ = ["check_result", "to_date_flexible"]
 
+from datetime import date
 from typing import TypeVar
+
+from dateutil import parser
 
 from fund_nav_mcp.models.common import UtilResponse
 from fund_nav_mcp.utils.enums import Errcode
@@ -24,3 +27,23 @@ def check_result(result: UtilResponse[T]) -> UtilResponse[T]:
     if result.code not in {Errcode.SUCCESS, Errcode.DONE, Errcode.CONTINUE, Errcode.PROCESS}:
         raise Exception(result.message)
     return result
+
+
+def to_date_flexible(
+        date_str: str, day_first: bool = False, year_first: bool = False, fuzzy: bool = False
+) -> date:
+    """
+    将各种常见日期字符串解析为 datetime.date 对象。
+
+    Args:
+        date_str: 日期字符串，如 '20260510', '2026-05-10', '10/05/2026' 等。
+        day_first: 针对 '10/05/2026' 这种歧义格式，若为 True 则按“日/月/年”解析。
+        year_first: 若为 True 则优先将前面的数字视为年份。
+        fuzzy: 是否允许解析不完全的日期字符串。
+
+    Returns:
+        datetime.date 对象，如果解析失败则抛出 ValueError。
+    """
+    dt = parser.parse(date_str, dayfirst=day_first, yearfirst=year_first, fuzzy=fuzzy)
+    return dt.date()
+

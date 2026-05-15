@@ -197,8 +197,8 @@ async def seeded_nav(handler_db: DBManager, seeded_fund: Fund) -> Base:
     obj = FundNav(
         fund_id=seeded_fund.id,
         nav_date=date(2025, 6, 1),
-        unit_nav=1.2345,
-        acc_nav=2.3456,
+        nav_unit=1.2345,
+        nav_acc=2.3456,
         nav_status=FundNavStatus.Valid,
         data_source=FundDataSource.ManualImport,
     )

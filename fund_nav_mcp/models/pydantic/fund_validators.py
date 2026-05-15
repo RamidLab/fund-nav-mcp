@@ -7,11 +7,13 @@ __all__ = [
 ]
 
 import re
-from datetime import date
+from datetime import datetime
 from decimal import Decimal
 from typing import Any, Optional
 
 from pydantic import field_validator, model_validator
+
+from fund_nav_mcp.utils.common import to_date_flexible
 
 
 class FundValidators:
@@ -71,9 +73,9 @@ class FundNavValidators:
             raise ValueError("基金代码不能为空白")
         return code
 
-    @field_validator("unit_nav")
+    @field_validator("nav_unit")
     @classmethod
-    def _positive_unit_nav(cls, v: Optional[Decimal]) -> Optional[Decimal]:
+    def _positive_nav_unit(cls, v: Optional[Decimal]) -> Optional[Decimal]:
         """单位净值必须大于 0。None 值直接返回。"""
         if v is None:
             return v
@@ -83,19 +85,19 @@ class FundNavValidators:
 
     @field_validator("nav_date")
     @classmethod
-    def _nav_date_not_future(cls, v: Optional[date]) -> Optional[date]:
+    def _nav_date_not_future(cls, v: Optional[str]) -> Optional[str]:
         """净值日期不能晚于今天。"""
         if v is None:
             return v
-        if v > date.today():
+        if to_date_flexible(v) > datetime.today().date():
             raise ValueError(f"净值日期不能晚于今天，当前值: {v}")
         return v
 
     @model_validator(mode="after")
     def _validate_nav_consistency(self: Any) -> Any:
         """若同时提供了累计净值与单位净值，则累计净值不得小于单位净值。"""
-        acc = getattr(self, "acc_nav", None)
-        unit = getattr(self, "unit_nav", None)
+        acc = getattr(self, "nav_acc", None)
+        unit = getattr(self, "nav_unit", None)
         if acc is not None and unit is not None and acc < unit:
             raise ValueError(f"累计净值 ({acc}) 不能小于单位净值 ({unit})")
         return self
@@ -141,11 +143,11 @@ class FundReturnValidators:
 
     @field_validator("calculation_date")
     @classmethod
-    def _calc_date_not_future(cls, v: Optional[date]) -> Optional[date]:
+    def _calc_date_not_future(cls, v: Optional[str]) -> Optional[str]:
         """计算日期不能晚于今天。"""
         if v is None:
             return v
-        if v > date.today():
+        if to_date_flexible(v) > datetime.today().date():
             raise ValueError(f"计算日期不能晚于今天，当前值: {v}")
         return v
 
@@ -221,11 +223,11 @@ class FundHoldingValidators:
 
     @field_validator("report_date")
     @classmethod
-    def _report_date_not_future(cls, v: Optional[date]) -> Optional[date]:
+    def _report_date_not_future(cls, v: Optional[str]) -> Optional[str]:
         """报告日期不能晚于今天。"""
         if v is None:
             return v
-        if v > date.today():
+        if to_date_flexible(v) > datetime.today().date():
             raise ValueError(f"报告日期不能晚于今天，当前值: {v}")
         return v
 
@@ -290,9 +292,11 @@ class FundManagerValidators:
 
     @field_validator("amac_registration_date")
     @classmethod
-    def _registration_date_not_future(cls, v: Optional[date]) -> Optional[date]:
+    def _registration_date_not_future(cls, v: Optional[str]) -> Optional[str]:
         """登记时间不能晚于今天。"""
-        if v is not None and v > date.today():
+        if v is None:
+            return v
+        if to_date_flexible(v) > datetime.today().date():
             raise ValueError(f"登记时间不能晚于今天，当前值: {v}")
         return v
 
@@ -364,9 +368,11 @@ class FundManagerPersonValidators:
 
     @field_validator("birth_date")
     @classmethod
-    def _birth_date_not_future(cls, v: Optional[date]) -> Optional[date]:
+    def _birth_date_not_future(cls, v: Optional[str]) -> Optional[str]:
         """出生日期不能晚于今天。"""
-        if v is not None and v > date.today():
+        if v is None:
+            return v
+        if to_date_flexible(v) > datetime.today().date():
             raise ValueError(f"出生日期不能晚于今天，当前值: {v}")
         return v
 

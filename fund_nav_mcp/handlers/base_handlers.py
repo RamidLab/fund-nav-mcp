@@ -5,6 +5,7 @@ from sqlalchemy import func, select
 from fund_nav_mcp.db.core import get_manager
 from fund_nav_mcp.models.orm import Fund, FundCategory, FundManager, FundManagerPerson
 from fund_nav_mcp.models.orm.base import Base
+from fund_nav_mcp.utils.common import to_date_flexible
 
 
 class CodeResolveMixin:
@@ -57,6 +58,11 @@ class CodeResolveMixin:
     _OWN_CODE_FIELDS: Dict[Type[Base], set[str]] = {
         Fund: {"fund_code"},
         FundCategory: {"category_code"},
+    }
+
+    _DATE_FIELDS: set = {
+        "establishment_date", "registration_date", "nav_date", "calculation_date",
+        "report_date", "amac_registration_date", "birth_date"
     }
 
     @staticmethod
@@ -395,3 +401,19 @@ class CodeResolveMixin:
         raise ValueError(
             f"无法识别 {orm_model.__tablename__} 记录：请提供 `record_id` 或唯一的业务编码字段。"
         )
+
+    def _conv_date_fields(self, data_list: List[dict]) -> List[dict]:
+        """
+        转换日期字段为数据库支持的格式。
+
+        Args:
+            data_list: 待处理的数据字典列表。
+
+        Returns:
+            处理后的数据字典列表，其中日期字段已转换为数据库支持的格式。
+        """
+        for row in data_list:
+            for field, value in row.items():
+                if field in self._DATE_FIELDS:
+                    row[field] = to_date_flexible(value)
+        return data_list
