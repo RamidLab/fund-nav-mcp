@@ -1,6 +1,7 @@
-from typing import Any, Dict, List, Tuple, Type, Optional
+from datetime import date
+from typing import Any, Dict, List, Tuple, Type, Optional, Set
 
-from sqlalchemy import func, select
+from sqlalchemy import Integer, String, Date, DECIMAL, func, select
 
 from fund_nav_mcp.db.core import get_manager
 from fund_nav_mcp.models.orm import Fund, FundCategory, FundManager, FundManagerPerson
@@ -24,10 +25,11 @@ class CodeResolveMixin:
           但可用于唯一性校验（主要在 AddHandler 中使用）以及通过 code 定位记录。
 
     Attributes:
-        _CODE_RESOLVE_MAP (Dict[str, tuple]): code 字段到 (目标 id 字段, 参照 ORM 模型, 参照表查询列) 的映射。
-        _NAME_RESOLVE_MAP (Dict[str, tuple]): 名称字段到 (对应 code 字段, 目标 id 字段, 参照 ORM 模型, 参照表名称列) 的映射。
-        _OWN_CODE_FIELDS (Dict[type, set[str]]): 每个 ORM 模型自身的 code 字段集合，这些字段不会被当作外键处理。
-        _NAME_FIELDS (set[str]): 所有名称中间字段的集合，这些字段仅用于解析，不应持久化到数据库。
+        _CODE_RESOLVE_MAP: code 字段到 (目标 id 字段, 参照 ORM 模型, 参照表查询列) 的映射。
+        _NAME_RESOLVE_MAP: 名称字段到 (对应 code 字段, 目标 id 字段, 参照 ORM 模型, 参照表名称列) 的映射。
+        _OWN_CODE_FIELDS: 每个 ORM 模型自身的 code 字段集合，这些字段不会被当作外键处理。
+        _NAME_FIELDS: 所有名称中间字段的集合，这些字段仅用于解析，不应持久化到数据库。
+        _AUTO_CREATE_MODELS: FK 解析失败时自动创建占位记录的参照模型集合。
     """
 
     # code 字段 → (对应的 id 字段名, 参照的 ORM 模型, 用于查询的数据库列名)
@@ -59,6 +61,12 @@ class CodeResolveMixin:
         Fund: {"fund_code"},
         FundCategory: {"category_code"},
     }
+
+    # FK 解析失败时自动创建占位记录的参照模型集合
+    _AUTO_CREATE_MODELS: Set[Type[Base]] = {Fund}
+
+    # ORM 自动管理的列，透传和占位构造时需跳过
+    _AUTO_MANAGED_COLUMNS: Set[str] = {"id", "created_at", "updated_at"}
 
     _DATE_FIELDS: set = {
         "establishment_date", "registration_date", "nav_date", "calculation_date",
@@ -135,6 +143,53 @@ class CodeResolveMixin:
         own = self._OWN_CODE_FIELDS.get(orm_model, set())
         return set(self._CODE_RESOLVE_MAP.keys()) - own
 
+    @classmethod
+    def _ref_passthrough_columns(cls, ref_model: Type[Base], lookup_col: str) -> Set[str]:
+        """
+        从 ``ref_model`` 的 ORM 列推导可透传的字段集合。
+
+        排除主键、自动管理列、lookup_col，以及属于其他 code→id 映射目标的列。
+        """
+        pk_cols = {c.name for c in ref_model.__table__.primary_key.columns}
+        id_target_cols = {
+            id_field
+            for code_field, (id_field, m, _) in cls._CODE_RESOLVE_MAP.items()
+            if m is ref_model and code_field != lookup_col
+        }
+        return {
+            c.name for c in ref_model.__table__.columns.values()
+            if c.name not in pk_cols
+               and c.name not in cls._AUTO_MANAGED_COLUMNS
+               and c.name != lookup_col
+               and c.name not in id_target_cols
+        }
+
+    @classmethod
+    def _build_placeholder(
+            cls, ref_model: Type[Base], lookup_col: str, code_val: str, extras: Dict[str, Any],
+    ) -> Base:
+        """用内省构建占位记录：无默认值的列用类型感知兜底值填充，extras 覆盖。"""
+        kwargs: Dict[str, Any] = {lookup_col: code_val}
+
+        for c in ref_model.__table__.columns.values():
+            cn = c.name
+            if cn in kwargs or cn in extras or cn in cls._AUTO_MANAGED_COLUMNS:
+                continue
+            if c.server_default is not None or c.primary_key:
+                continue
+            col_type = getattr(c.type, 'impl', c.type)
+            if cn == f"{ref_model.__tablename__}_name" and isinstance(col_type, String):
+                kwargs[cn] = f"未知{ref_model.__tablename__}-{code_val}"
+            elif isinstance(col_type, Date):
+                kwargs[cn] = date.today()
+            elif isinstance(col_type, (Integer, DECIMAL)):
+                kwargs[cn] = 0
+            else:
+                kwargs[cn] = None
+
+        kwargs.update(extras)
+        return ref_model(**kwargs)
+
     async def _resolve_fk_codes(
             self, orm_model: Type[Base], data_list: List[Dict[str, Any]], db_name: str,
     ) -> List[Dict[str, Any]]:
@@ -146,7 +201,7 @@ class CodeResolveMixin:
             2. 收集所有需要解析的 code 值（仅当字符串提供且对应 id 未填写）。
             3. 执行一次批量 IN 查询，构建 ``code → id`` 的字典缓存。
             4. 对于每条数据，用缓存中的 id 填充对应的 id 字段；
-               若某个 code 在数据库中找不到，抛出 ValueError。
+               若某个 code 在数据库中找不到：_AUTO_CREATE_MODELS 中的模型自动创建占位记录，其余抛出 ValueError。
             5. 通过 ``_merge_resolved`` 合并并移除中间 code 字段。
 
         Args:
@@ -184,8 +239,36 @@ class CodeResolveMixin:
             rows = await mgr.fetch_all(stmt)
             code_cache[code_field] = {r[lookup_col]: r["id"] for r in rows}
 
+            # 若参照模型支持自动创建且 code 不存在，构建占位记录
+            if model in self._AUTO_CREATE_MODELS and codes:
+                cache = code_cache[code_field]
+                missing = [c for c in codes if c not in cache]
+                if missing:
+                    passthrough = self._ref_passthrough_columns(model, lookup_col)
+                    for mc in missing:
+                        # 从请求数据中提取该参照模型的透传字段
+                        extras: Dict[str, Any] = {}
+                        for d in data_list:
+                            if d.get(code_field, "").strip() == mc:
+                                for fn in passthrough:
+                                    if fn in d and d[fn] is not None and fn not in extras:
+                                        extras[fn] = d[fn]
+                        # 日期字段统一转换
+                        for date_fn in self._DATE_FIELDS & passthrough:
+                            if date_fn in extras:
+                                extras[date_fn] = to_date_flexible(extras[date_fn])
+                        placeholder = self._build_placeholder(model, lookup_col, mc, extras)
+                        await mgr.insert(placeholder)
+                        cache[mc] = placeholder.id
+
         # 第三步：逐条数据处理
         strip = self._fk_code_fields(orm_model)
+        # 非参照自身的模型需移除所有自动创建模型的透传字段
+        for ref_model in self._AUTO_CREATE_MODELS:
+            if orm_model is not ref_model:
+                for _code_field, (_, m, _lookup) in self._CODE_RESOLVE_MAP.items():
+                    if m is ref_model:
+                        strip |= self._ref_passthrough_columns(ref_model, _lookup)
         resolved_list: List[Dict[str, Any]] = []
         for d in data_list:
             resolved: Dict[str, Any] = {}

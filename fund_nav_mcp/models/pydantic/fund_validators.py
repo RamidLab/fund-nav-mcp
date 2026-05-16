@@ -76,11 +76,17 @@ class FundNavValidators:
     @field_validator("nav_unit")
     @classmethod
     def _positive_nav_unit(cls, v: Optional[Decimal]) -> Optional[Decimal]:
-        """单位净值必须大于 0。None 值直接返回。"""
-        if v is None:
-            return v
-        if v <= 0:
+        """单位净值必须大于 0。"""
+        if v is not None and v <= 0:
             raise ValueError(f"单位净值必须大于0，当前值: {v}")
+        return v
+
+    @field_validator("nav_acc", "nav_adj")
+    @classmethod
+    def _zero_to_none(cls, v: Optional[Decimal]) -> Optional[Decimal]:
+        """累计/复权净值为 0 时视为未提供，转为 None。"""
+        if v is not None and v == 0:
+            return None
         return v
 
     @field_validator("nav_date")

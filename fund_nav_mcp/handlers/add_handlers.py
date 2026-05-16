@@ -1,4 +1,4 @@
-from typing import List, Type
+from typing import Any, List, Type
 
 from pydantic import BaseModel
 
@@ -30,7 +30,7 @@ class AddHandler(CodeResolveMixin):
 
     async def handle(
             self, orm_model: Type[Base], data: BaseModel, db_name: str = "default",
-    ) -> UtilResponse[dict[str, int]]:
+    ) -> UtilResponse[dict[str, Any]]:
         """
         添加单条 ORM 记录。
 
@@ -42,30 +42,51 @@ class AddHandler(CodeResolveMixin):
         Returns:
             UtilResponse，包含新记录的 id。
         """
-        data_list = [data.model_dump()]
-        # 1) 检查自身 code 唯一性
-        await self._check_own_codes_unique(orm_model, data_list, db_name)
-        # 2) 解析外键 code（由基类提供）
-        data_list = await self._resolve_fk_codes(orm_model, data_list, db_name)
-        # 3) 名称兜底解析（由基类提供）
-        data_list = await self._resolve_names(data_list, db_name)
-        # 4) 时间字段处理
-        data_list = self._conv_date_fields(data_list)
+        raw = data.model_dump()
 
-        raw = data_list[0]
+        # 1) 检查自身 code 唯一性
+        try:
+            await self._check_own_codes_unique(orm_model, [raw], db_name)
+        except ValueError as e:
+            return UtilResponse(
+                code=Errcode.UNIQUE_CONFLICT, message=str(e), data={"id": None},
+            )
+
+        # 2) 解析外键 code（由基类提供）
+        try:
+            raw = (await self._resolve_fk_codes(orm_model, [raw], db_name))[0]
+        except ValueError as e:
+            return UtilResponse(
+                code=Errcode.FAIL, message=str(e), data={"id": None},
+            )
+
+        # 3) 名称兜底解析（由基类提供）
+        try:
+            raw = (await self._resolve_names([raw], db_name))[0]
+        except ValueError as e:
+            return UtilResponse(
+                code=Errcode.FAIL, message=str(e), data={"id": None},
+            )
+
+        # 4) 时间字段处理
+        raw = self._conv_date_fields([raw])[0]
+
+        # 5) 插入记录
         mgr = (await get_manager("db", db_name))["mgr"]
-        orm_instance = orm_model(**raw)
-        await mgr.insert(orm_instance)
-        return UtilResponse(code=Errcode.SUCCESS, message="添加成功", data={"id": orm_instance.id})
+        try:
+            orm_instance = orm_model(**raw)
+            await mgr.insert(orm_instance)
+            return UtilResponse(code=Errcode.SUCCESS, message="添加成功", data={"id": orm_instance.id})
+        except Exception as e:
+            return UtilResponse(
+                code=Errcode.FAIL, message=f"添加失败: {e}", data={"id": None},
+            )
 
     async def handle_batch(
             self, orm_model: Type[Base], data_list: List[BaseModel], db_name: str = "default"
-    ) -> UtilResponse[dict[str, list[int]]]:
+    ) -> UtilResponse[dict[str, Any]]:
         """
-        批量添加记录。
-
-        与单条添加流程相同，但对传入的整个列表统一进行 code 唯一性校验、
-        外键 code 解析和名称解析，最后批量插入数据库。
+        批量添加记录，支持部分失败——单条异常不影响其他记录。
 
         Args:
             orm_model: 目标 ORM 模型类。
@@ -73,18 +94,67 @@ class AddHandler(CodeResolveMixin):
             db_name: 数据库连接名称，默认为 "default"。
 
         Returns:
-            UtilResponse 统一响应，data 中包含新记录的 ID 列表和数量。
+            UtilResponse，data 中包含成功数量、失败数量、成功 ID 列表和失败详情。
         """
+        total = len(data_list)
         raws = [d.model_dump() for d in data_list]
-        # 1) 检查自身 code 唯一性
-        await self._check_own_codes_unique(orm_model, raws, db_name)
-        # 2) 解析外键 code（基类提供）
-        raws = await self._resolve_fk_codes(orm_model, raws, db_name)
-        # 3) 名称兜底解析（基类提供）
-        raws = await self._resolve_names(raws, db_name)
 
+        # 1) 检查自身 code 唯一性（整批共享，失败则整体退出）
+        try:
+            await self._check_own_codes_unique(orm_model, raws, db_name)
+        except ValueError as e:
+            return UtilResponse(
+                code=Errcode.UNIQUE_CONFLICT, message=str(e),
+                data={"success_count": 0, "fail_count": total, "ids": [],
+                      "failures": [{"index": 0, "key": {}, "error": str(e)}]},
+            )
+
+        # 2) 解析外键 code（整批共享）
+        try:
+            raws = await self._resolve_fk_codes(orm_model, raws, db_name)
+        except ValueError as e:
+            return UtilResponse(
+                code=Errcode.FAIL, message=str(e),
+                data={"success_count": 0, "fail_count": total, "ids": [],
+                      "failures": [{"index": 0, "key": {}, "error": str(e)}]},
+            )
+
+        # 3) 名称兜底解析（整批共享）
+        try:
+            raws = await self._resolve_names(raws, db_name)
+        except ValueError as e:
+            return UtilResponse(
+                code=Errcode.FAIL, message=str(e),
+                data={"success_count": 0, "fail_count": total, "ids": [],
+                      "failures": [{"index": 0, "key": {}, "error": str(e)}]},
+            )
+
+        # 4) 时间字段处理
+        raws = self._conv_date_fields(raws)
+
+        # 5) 逐条插入，单条异常不影响其他记录
         mgr = (await get_manager("db", db_name))["mgr"]
-        orm_instances = [orm_model(**d) for d in raws]
-        await mgr.insert_batch(orm_instances)
-        ids = [obj.id for obj in orm_instances]
-        return UtilResponse(code=Errcode.SUCCESS, message="批量添加成功", data={"ids": ids, "count": len(ids)})
+        success_ids: list[int] = []
+        failures: list[dict] = []
+
+        for i, raw in enumerate(raws):
+            try:
+                instance = orm_model(**raw)
+                await mgr.insert(instance)
+                success_ids.append(instance.id)
+            except Exception as e:
+                key = {k: str(v) for k, v in raw.items() if k.endswith(("_code", "_date")) and v is not None}
+                failures.append({"index": i, "key": key, "error": str(e)})
+
+        sc, fc = len(success_ids), len(failures)
+        if fc == 0:
+            return UtilResponse(code=Errcode.SUCCESS, message="批量添加成功", data={
+                "success_count": sc, "fail_count": 0, "ids": success_ids, "failures": [],
+            })
+        if sc == 0:
+            return UtilResponse(code=Errcode.FAIL, message=f"全部{fc}条失败", data={
+                "success_count": 0, "fail_count": fc, "ids": [], "failures": failures,
+            })
+        return UtilResponse(code=Errcode.SUCCESS, message=f"成功{sc}条，失败{fc}条", data={
+            "success_count": sc, "fail_count": fc, "ids": success_ids, "failures": failures,
+        })

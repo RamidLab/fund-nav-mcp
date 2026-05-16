@@ -135,6 +135,7 @@ class FundNavStatus(_BaseIntEnum):
 
 
 class FundType(_BaseIntEnum):
+    Unknown = 0, "未知"
     Stock = 1, "股票型"
     Mixed = 2, "混合型"
     Bond = 3, "债券型"
@@ -147,15 +148,15 @@ class FundType(_BaseIntEnum):
 
     @classmethod
     def _missing_(cls, value: str):
-        return cls._resolver(value, default=cls.Other)
+        return cls._resolver(value, default=cls.Unknown)
 
     @classmethod
     def from_name(cls, name: str) -> "FundType":
-        return getattr(cls, name, cls.Other)
+        return getattr(cls, name, cls.Unknown)
 
     @classmethod
     def from_label(cls, label: str) -> "FundType":
-        return next((status for status in cls if status.label == label), cls.Other)
+        return next((status for status in cls if status.label == label), cls.Unknown)
 
 
 class ShareClass(_BaseIntEnum):

@@ -1,4 +1,32 @@
-## [0.12.3] 2026-05-15
+## [0.12.4] 2026-05-16
+
+### Added
+
+- **外键缺失自动创建占位记录**：[`add_handlers`](fund_nav_mcp/handlers/add_handlers.py)在批量添加净值/收益率/持仓时，若 `fund_code` 对应的基金记录不存在，系统自动创建一条占位基金记录。
+  - 占位基金名称默认格式 `未知fund-{code}`，其余字段根据 ORM 列类型自动填充类型感知的兜底值（如 `""`、`0`、`date.today()` 等）。
+  - 若请求中同时传入了 `fund_name`、`fund_type` 等 `Fund` 模型字段，优先使用传入值填充占位记录。
+  - 通过 `AddHandler._AUTO_CREATE_MODELS` 集合控制哪些关系支持自动创建，便于扩展至其他模型（如基金管理人）。
+  - 占位构造逻辑 `_build_placeholder` 与透传字段推导 `_ref_passthrough_columns` 均基于 ORM 列内省实现，不再硬编码 `Fund` 特有逻辑。
+
+- **批量添加部分失败隔离**：[`add_handlers.handle_batch`](fund_nav_mcp/handlers/add_handlers.py) 方法改为逐条插入，单条记录的异常不会影响其他记录的添加。
+  - 响应数据结构扩展为：`{success_count, fail_count, ids, failures}`。
+  - `failures` 列表包含失败记录的 `index`（序号）、`key`（自动提取的 `_code`/`_date` 等定位字段）、`error`（异常信息）。
+  - 全部成功 → `code=SUCCESS`；部分成功 → `code=SUCCESS` 并返回明细；全部失败 → `code=FAIL` 并返回明细。
+
+- **净值校验强化**：
+  - `unit_nav` 在创建模型中已是必填字段（`Field(...)`），并新增 `validator` 拦截 ≤ 0 的值。
+  - `acc_nav` / `adj_nav` 若传入 `0`，自动转换为 `None`，避免写入无意义的零值。
+
+### Changed
+
+- **批量添加响应类型**：[`handle_batch`](fund_nav_mcp/handlers/add_handlers.py) 方法返回类型从 `dict[str, list[int]]` 调整为 `dict[str, Any]`，解决了 `count` 字段与 FastMCP output schema 要求 `array` 类型的冲突。
+- **Pydantic 模型增加 `extra="allow"`**：[`models/pydantic/fund`](fund_nav_mcp/models/pydantic/fund.py) 为 `FundNavCreate`、`FundReturnCreate`、`FundHoldingCreate` 添加 `model_config = {"extra": "allow"}`，允许在请求中透传 `Fund` 模型的字段（如 `fund_name`），供 handler 层自动创建占位基金时使用。
+
+### Fixed
+
+- 修复 [`add_handlers.handle_batch`](fund_nav_mcp/handlers/add_handlers.py) 方法 内部遗漏调用 `_conv_date_fields` 的问题，该问题导致日期字符串直接传入 SQLite 时引发 `TypeError`。
+
+## [0.12.4] 2026-05-15
 
 ### Added
 

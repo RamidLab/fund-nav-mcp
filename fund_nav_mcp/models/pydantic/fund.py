@@ -190,6 +190,25 @@ class ShareClassDescription(BaseModel):
 # ================================================================
 
 class FundBase(FundValidators, BaseModel):
+    fund_code: str = Field(..., title="基金代码", max_length=20)
+    fund_name: str = Field(..., title="基金名称", max_length=200)
+    fund_short_name: Optional[str] = Field(default=None, title="基金简称", max_length=100)
+    fund_type: Optional[FundType] = Field(default=FundType.Unknown, title="投资标的类型")
+    fund_regulatory_type: FundRegulatoryType = Field(..., title="监管类型")
+    manager_person_code: Optional[str] = Field(default=None, max_length=50, title="基金管理人（个人）从业资格证号")
+    manager_person_name: Optional[str] = Field(
+        default=None, max_length=50, title="基金管理人（个人）姓名（code 未传时按名称查找）")
+    manager_code: Optional[str] = Field(default=None, max_length=20, title="基金管理人（机构）中基协登记编号")
+    manager_name: Optional[str] = Field(
+        default=None, max_length=100, title="基金管理人（机构）公司全称（code 未传时按名称查找）")
+    fund_management_type: Optional[FundManagementType] = Field(default=FundManagementType.Unknown, title="基金管理类型")
+    fund_custodian: Optional[str] = Field(default=None, title="基金托管人", max_length=100)
+    fund_registration_address: Optional[str] = Field(default=None, title="注册地址", max_length=100)
+    establishment_date: Optional[str] = Field(default=None, title="成立日期")
+    registration_date: Optional[str] = Field(default=None, title="备案日期")
+    status: Optional[FundStatus] = Field(default=FundStatus.Unknown, title="基金状态")
+    share_class: Optional[ShareClass] = Field(default=ShareClass.NotApplicable, title="份额类别")
+    parent_fund_code: Optional[str] = Field(default=None, max_length=20, title="父基金代码")
 
     @staticmethod
     def _validate_fund_code(fund_code: str, regulatory_type: FundRegulatoryType) -> None:
@@ -212,39 +231,21 @@ class FundBase(FundValidators, BaseModel):
             if any(c.isspace() for c in code):
                 raise ValueError("基金代码不允许包含空白字符")
 
-    fund_code: str = Field(..., title="基金代码", max_length=20)
-    fund_name: str = Field(..., title="基金名称", max_length=200)
-    fund_short_name: Optional[str] = Field(default=None, title="基金简称", max_length=100)
-    fund_type: Optional[FundType] = Field(default=None, title="投资标的类型")
-    fund_regulatory_type: FundRegulatoryType = Field(..., title="监管类型")
-    manager_person_code: Optional[str] = Field(default=None, max_length=50, title="基金管理人（个人）从业资格证号")
-    manager_person_name: Optional[str] = Field(default=None, max_length=50,
-                                               title="基金管理人（个人）姓名（code 未传时按名称查找）")
-    manager_code: Optional[str] = Field(default=None, max_length=20, title="基金管理人（机构）中基协登记编号")
-    manager_name: Optional[str] = Field(default=None, max_length=100,
-                                        title="基金管理人（机构）公司全称（code 未传时按名称查找）")
-    fund_management_type: FundManagementType = Field(..., title="基金管理类型")
-    fund_custodian: Optional[str] = Field(default=None, title="基金托管人", max_length=100)
-    fund_registration_address: Optional[str] = Field(default=None, title="注册地址", max_length=100)
-    establishment_date: str = Field(..., title="成立日期")
-    registration_date: str = Field(..., title="备案日期")
-    status: FundStatus = Field(..., title="基金状态")
-    share_class: ShareClass = Field(default=ShareClass.NotApplicable, title="份额类别")
-    parent_fund_code: Optional[str] = Field(default=None, max_length=20, title="父基金代码")
-
     @model_validator(mode="after")
     def _validate_fund_consistency(self) -> "FundBase":
         self._validate_fund_code(self.fund_code, self.fund_regulatory_type)
 
-        establishment_date = to_date_flexible(self.establishment_date)
-        registration_date = to_date_flexible(self.registration_date)
+        establishment_date = to_date_flexible(self.establishment_date) if self.establishment_date else None
+        registration_date = to_date_flexible(self.registration_date) if self.registration_date else None
 
-        if establishment_date > registration_date:
+        if establishment_date and registration_date and establishment_date > registration_date:
             raise ValueError(
                 f"成立日期 ({self.establishment_date}) 不能晚于备案日期 ({self.registration_date})"
             )
-        if (self.share_class is not ShareClass.NotApplicable
-                and self.fund_regulatory_type is FundRegulatoryType.Unknown):
+
+        if (self.share_class and self.share_class is not ShareClass.NotApplicable
+                and self.fund_regulatory_type is FundRegulatoryType.Unknown
+        ):
             raise ValueError(
                 f"设置了份额类别 ({self.share_class.label})，但监管类型未知，"
                 f"请指定正确的监管类型（公募/私募）"
@@ -271,6 +272,8 @@ class FundBase(FundValidators, BaseModel):
     @property
     def share_class_description(self) -> str:
         """返回当前份额类别在基金类型上下文中的详细说明。"""
+        if not self.share_class:
+            return "份额类别为空, 无法获取详细说明"
         return ShareClassDescription.get_description(self.share_class, self.fund_type, self.fund_regulatory_type)
 
 
@@ -339,6 +342,8 @@ class FundResponse(FundBase):
     @property
     def share_class_description(self) -> str:
         """返回当前份额类别在基金类型上下文中的详细说明。"""
+        if not self.share_class:
+            return "份额类别为空, 无法获取详细说明"
         return ShareClassDescription.get_description(self.share_class, self.fund_type, self.fund_regulatory_type)
 
 
@@ -358,7 +363,7 @@ class FundNavBase(FundNavValidators, BaseModel):
 
 
 class FundNavCreate(FundNavBase):
-    pass
+    model_config = ConfigDict(extra="allow")
 
 
 class FundNavUpdate(FundNavValidators, BaseModel):
@@ -414,7 +419,7 @@ class FundReturnBase(FundReturnValidators, BaseModel):
 
 
 class FundReturnCreate(FundReturnBase):
-    pass
+    model_config = ConfigDict(extra="allow")
 
 
 class FundReturnUpdate(FundReturnValidators, BaseModel):
@@ -472,7 +477,7 @@ class FundHoldingBase(FundHoldingValidators, BaseModel):
 
 
 class FundHoldingCreate(FundHoldingBase):
-    pass
+    model_config = ConfigDict(extra="allow")
 
 
 class FundHoldingUpdate(FundHoldingValidators, BaseModel):
