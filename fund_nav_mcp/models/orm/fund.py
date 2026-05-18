@@ -86,6 +86,9 @@ class FundNav(Base):
     daily_return_rate: Mapped[Optional[float]] = mapped_column(DECIMAL(10, 4), comment='日增长率')
     nav_status: Mapped[FundNavStatus] = mapped_column(Integer, default=FundNavStatus.Unknown, comment='净值状态')
     data_source: Mapped[FundDataSource] = mapped_column(Integer, comment='数据来源')
+    source_reference: Mapped[Optional[str]] = mapped_column(
+        String(200), comment='来源引用标识（邮件Message-ID、文件路径+hash、API请求ID等）'
+    )
     version: Mapped[int] = mapped_column(Integer, default=0, comment='版本号')
 
     # 关系

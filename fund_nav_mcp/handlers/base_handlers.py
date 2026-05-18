@@ -1,3 +1,4 @@
+import re
 from datetime import date
 from typing import Any, Dict, List, Tuple, Type, Optional, Set
 
@@ -7,6 +8,7 @@ from fund_nav_mcp.db.core import get_manager
 from fund_nav_mcp.models.orm import Fund, FundCategory, FundManager, FundManagerPerson
 from fund_nav_mcp.models.orm.base import Base
 from fund_nav_mcp.utils.common import to_date_flexible
+from fund_nav_mcp.utils.enums import ShareClass
 
 
 class CodeResolveMixin:
@@ -67,6 +69,13 @@ class CodeResolveMixin:
 
     # ORM 自动管理的列，透传和占位构造时需跳过
     _AUTO_MANAGED_COLUMNS: Set[str] = {"id", "created_at", "updated_at"}
+
+    # fund_code 份额后缀检测：S12345A → base=S12345, share_class=A
+    _SHARE_CLASS_SUFFIX_PATTERN: re.Pattern = re.compile(r'^(.+?)([A-Ea-e])$')
+    _SHARE_CLASS_SUFFIX_MAP: Dict[str, ShareClass] = {
+        "A": ShareClass.A, "B": ShareClass.B, "C": ShareClass.C,
+        "D": ShareClass.D, "E": ShareClass.E,
+    }
 
     _DATE_FIELDS: set = {
         "establishment_date", "registration_date", "nav_date", "calculation_date",
@@ -165,6 +174,20 @@ class CodeResolveMixin:
         }
 
     @classmethod
+    def _parse_fund_code_for_share_class(cls, fund_code: str) -> Tuple[str, Optional[ShareClass]]:
+        """从 fund_code 中提取基码和份额类别。
+
+        S12345A → (S12345, ShareClass.A)
+        S12345  → (S12345, None)
+        """
+        m = cls._SHARE_CLASS_SUFFIX_PATTERN.match(fund_code.strip())
+        if not m:
+            return fund_code, None
+        base = m.group(1)
+        suffix = m.group(2).upper()
+        return base, cls._SHARE_CLASS_SUFFIX_MAP.get(suffix)
+
+    @classmethod
     def _build_placeholder(
             cls, ref_model: Type[Base], lookup_col: str, code_val: str, extras: Dict[str, Any],
     ) -> Base:
@@ -257,6 +280,18 @@ class CodeResolveMixin:
                         for date_fn in self._DATE_FIELDS & passthrough:
                             if date_fn in extras:
                                 extras[date_fn] = to_date_flexible(extras[date_fn])
+                        # 检测 fund_code 中的份额后缀，自动创建父子关系
+                        if model is Fund:
+                            base_code, share_class = self._parse_fund_code_for_share_class(mc)
+                            if share_class is not None:
+                                if base_code not in cache:
+                                    parent_placeholder = self._build_placeholder(
+                                        model, lookup_col, base_code, {},
+                                    )
+                                    await mgr.insert(parent_placeholder)
+                                    cache[base_code] = parent_placeholder.id
+                                extras.setdefault("share_class", share_class)
+                                extras.setdefault("parent_fund_id", cache[base_code])
                         placeholder = self._build_placeholder(model, lookup_col, mc, extras)
                         await mgr.insert(placeholder)
                         cache[mc] = placeholder.id

@@ -219,7 +219,7 @@ class FundBase(FundValidators, BaseModel):
             if not re.match(r"^\d{6}$", code):
                 raise ValueError(f"公募基金代码必须为6位数字，当前值: '{code}'")
         elif int(regulatory_type) >= 3:
-            if re.match(r"^[Ss]\d{5}$", code) or \
+            if re.match(r"^[Ss]\d{5}[A-Ea-e]?$", code) or \
                     re.match(r"^[A-Za-z0-9]{9,15}$", code) or \
                     re.match(r"^P\d+$", code):
                 return
@@ -360,6 +360,7 @@ class FundNavBase(FundNavValidators, BaseModel):
     daily_return_rate: Optional[Decimal] = Field(None, max_digits=10, decimal_places=4, description='日增长率')
     nav_status: FundNavStatus = Field(..., description='净值状态')
     data_source: FundDataSource = Field(..., description='数据来源')
+    source_reference: Optional[str] = Field(default=None, max_length=200, description='来源引用标识（邮件Message-ID、文件路径+hash、API请求ID等）')
 
 
 class FundNavCreate(FundNavBase):
@@ -375,6 +376,7 @@ class FundNavUpdate(FundNavValidators, BaseModel):
     daily_return_rate: Optional[Decimal] = Field(None, max_digits=10, decimal_places=4, description='日增长率')
     nav_status: Optional[FundNavStatus] = Field(None, description='净值状态')
     data_source: Optional[FundDataSource] = Field(None, description='数据来源')
+    source_reference: Optional[str] = Field(default=None, max_length=200, description='来源引用标识（邮件Message-ID、文件路径+hash、API请求ID等）')
 
 
 class FundNavDelete(BaseDeleteModel):

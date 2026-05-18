@@ -4,6 +4,7 @@ __all__ = [
     "create_filter_class", "create_search_class"
 ]
 
+import re
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Set, Type, get_origin, get_args, Union, get_type_hints, Tuple, Literal
 
@@ -12,7 +13,7 @@ from sqlalchemy import Boolean, Date, DateTime, Integer, String, Text, ColumnEle
 from sqlalchemy.orm import InstrumentedAttribute, Mapped
 from sqlalchemy.sql.sqltypes import Enum as SQLEnum
 
-from fund_nav_mcp.models.orm import Base
+from fund_nav_mcp.models.orm import Base, Fund
 from fund_nav_mcp.models.pydantic import BaseFilter, FilterField, BaseSearchByKeyword, SearchField, BaseSearchByFields
 from fund_nav_mcp.models.pydantic.generate import register_pyi_class
 from fund_nav_mcp.utils.log import get_logger
@@ -363,10 +364,19 @@ def create_filter_class(
             value = getattr(self, _field_name, None)
             if value is None:
                 continue
+            _share_suffix_re = re.compile(r'[A-Ea-e]$')
             if isinstance(value, FilterField):
-                cond = self._build_condition(_target_col, value)
+                # fund_code 无后缀基码 + 默认 eq → 自动转为 like 前缀匹配，一次拿到所有份额变体
+                if (_target_col is Fund.fund_code and value.condition == "eq"
+                        and isinstance(value.value, str) and not _share_suffix_re.search(value.value)):
+                    cond = _target_col.like(f"{value.value}%")
+                else:
+                    cond = self._build_condition(_target_col, value)
             else:
-                cond = _target_col == value
+                if _target_col is Fund.fund_code and isinstance(value, str) and not _share_suffix_re.search(value):
+                    cond = _target_col.like(f"{value}%")
+                else:
+                    cond = _target_col == value
             if cond is not None:
                 if _rel_attr.property.uselist:
                     conditions.append(_rel_attr.any(cond))

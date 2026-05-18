@@ -1,6 +1,8 @@
+import re
 from typing import Any, List, Type
 
 from pydantic import BaseModel
+from sqlalchemy.exc import IntegrityError
 
 from fund_nav_mcp.db.core import get_manager
 from fund_nav_mcp.handlers.base_handlers import CodeResolveMixin
@@ -27,6 +29,73 @@ class AddHandler(CodeResolveMixin):
     Note:
         本类中的“code”泛指业务上的唯一标识字符串，不限于数据库主键，例如基金代码、管理人登记编号等。
     """
+
+    @classmethod
+    def _get_column_labels(cls, orm_model: Type[Base]) -> dict[str, str]:
+        """从 ORM 模型列的 comment 中提取 列名→中文标签 映射."""
+        labels: dict[str, str] = {}
+        for col in orm_model.__table__.columns.values():
+            comment = (col.comment or "").strip()
+            if not comment:
+                continue
+            # comment 可能附带补充说明，取第一个逗号/顿号前的部分作为短标签
+            label = re.split(r"[，,]", comment)[0]
+            labels[col.name] = label
+        return labels
+
+    @classmethod
+    def _parse_constraint_columns(cls, e: IntegrityError) -> tuple[str | None, list[str]]:
+        """从 IntegrityError 中提取表名和冲突列名列表."""
+        orig = str(getattr(e, "orig", e))
+        match = re.search(r"UNIQUE constraint failed:\s*(\S.*)", orig)
+        if not match:
+            return None, []
+        cols_part = match.group(1)
+        table: str | None = None
+        cols: list[str] = []
+        for seg in cols_part.split(","):
+            seg = seg.strip()
+            if "." in seg:
+                t, c = seg.split(".", 1)
+                if table is None:
+                    table = t
+                cols.append(c)
+            else:
+                cols.append(seg)
+        return table, cols
+
+    @classmethod
+    def _format_integrity_error(
+            cls, e: IntegrityError, raw: dict | None = None, orm_model: Type[Base] | None = None,
+    ) -> str:
+        """将 IntegrityError 转换为用户可读的中文消息."""
+        _table, cols = cls._parse_constraint_columns(e)
+        if not cols:
+            return f"数据重复：{getattr(e, 'orig', e)}"
+        labels = cls._get_column_labels(orm_model) if orm_model else {}
+        parts: list[str] = []
+        for c in cols:
+            label = labels.get(c, c)
+            if raw and c in raw and raw[c] is not None:
+                parts.append(f"「{label}={raw[c]}」")
+            else:
+                parts.append(f"「{label}」")
+        return f"数据重复：{', '.join(parts)} 的组合已存在，请勿重复添加"
+
+    @classmethod
+    def _extract_conflict_key(cls, e: IntegrityError, raw: dict) -> dict[str, str]:
+        """从 IntegrityError 中提取冲突列名，从 raw 中取出对应值组成 key."""
+        _table, cols = cls._parse_constraint_columns(e)
+        key: dict[str, str] = {}
+        for c in cols:
+            if c in raw and raw[c] is not None:
+                key[c] = str(raw[c])
+        if not key:
+            key = {
+                k: str(v) for k, v in raw.items()
+                if k.endswith(("_code", "_date")) and v is not None
+            }
+        return key
 
     async def handle(
             self, orm_model: Type[Base], data: BaseModel, db_name: str = "default",
@@ -77,6 +146,12 @@ class AddHandler(CodeResolveMixin):
             orm_instance = orm_model(**raw)
             await mgr.insert(orm_instance)
             return UtilResponse(code=Errcode.SUCCESS, message="添加成功", data={"id": orm_instance.id})
+        except IntegrityError as e:
+            return UtilResponse(
+                code=Errcode.UNIQUE_CONFLICT,
+                message=self._format_integrity_error(e, raw, orm_model),
+                data={"id": None, "conflict_key": self._extract_conflict_key(e, raw)},
+            )
         except Exception as e:
             return UtilResponse(
                 code=Errcode.FAIL, message=f"添加失败: {e}", data={"id": None},
@@ -142,6 +217,12 @@ class AddHandler(CodeResolveMixin):
                 instance = orm_model(**raw)
                 await mgr.insert(instance)
                 success_ids.append(instance.id)
+            except IntegrityError as e:
+                failures.append({
+                    "index": i,
+                    "key": self._extract_conflict_key(e, raw),
+                    "error": self._format_integrity_error(e, raw, orm_model),
+                })
             except Exception as e:
                 key = {k: str(v) for k, v in raw.items() if k.endswith(("_code", "_date")) and v is not None}
                 failures.append({"index": i, "key": key, "error": str(e)})

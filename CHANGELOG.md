@@ -1,3 +1,20 @@
+## [0.12.5] 2026-05-18
+
+### Added
+
+- **份额后缀自动创建父基金**：[`CodeResolveMixin._resolve_fk_codes`](fund_nav_mcp/handlers/base_handlers.py) 在自动创建占位基金时，识别 `fund_code` 中的份额后缀（A/B/C/D/E），提取基码后先创建主份额基金（若无），并为当前记录自动填充 `share_class` 与 `parent_fund_id`，实现份额体系静默补齐。
+- **唯一冲突友好提示**：[`AddHandler`](fund_nav_mcp/handlers/add_handlers.py) 新增 `_parse_constraint_columns`、`_format_integrity_error`、`_extract_conflict_key` 方法，从 `IntegrityError` 中解析冲突列与值，返回中文错误信息（如“数据重复：基金代码=‘000001’ 的组合已存在”）；单条与批量响应的 `data` 中增加 `conflict_key` 字段，便于前端精确定位重复项。
+- **基金代码查询自动前缀匹配**：[`create_filter_class`](fund_nav_mcp/handlers/base_handlers.py) 生成的过滤器对 `fund_code` 字段的 `eq` 条件，若值为无后缀基码（不以 A-E 结尾），自动转换为 `like 'value%'`，一次查询可匹配该基金的所有份额变体（如 S12345 → S12345A、S12345B），提升查询便利性。
+- **数据来源追溯字段**：[`FundNav`](fund_nav_mcp/models/orm/fund.py)  ORM 新增 `source_reference: Optional[str]` 列（String 200），Pydantic 模型同步增加该字段，用于记录邮件 Message-ID、文件路径+哈希、API 请求 ID 等来源标识。
+
+### Changed
+
+- **自动创建占位逻辑增强**：[`_build_placeholder`](fund_nav_mcp/handlers/base_handlers.py) 构建占位基金时，优先从请求中提取透传字段；份额后缀检测逻辑复用正则 `_SHARE_CLASS_SUFFIX_PATTERN`，支持大小写敏感。私募基金代码正则同步更新，允许末尾带份额后缀。
+- **Pydantic 日期字段类型调整**：`FundBase`、`FundUpdate`、`FundNavBase`、`FundReturnBase`、`FundHoldingBase` 等模型中的日期字段（`establishment_date`、`registration_date`、`nav_date`、`calculation_date`、`report_date`、`amac_registration_date`、`birth_date`）从 `date` 改为 `Optional[str]`，允许接收更多格式的日期字符串，由 `_conv_date_fields` 统一调用 `to_date_flexible` 转换，提升前端兼容性。
+- **枚举字段默认值统一**：[`FundBase`](fund_nav_mcp/models/pydantic/fund.py) 中 `fund_type`、`fund_management_type`、`status` 的默认值分别设为 `FundType.Unknown`、`FundManagementType.Unknown`、`FundStatus.Unknown`，确保非空且语义清晰。
+- **正则校验增强**：[`FundBase._validate_fund_code`](fund_nav_mcp/models/pydantic/fund.py) 中对私募代码的匹配模式增加可选后缀 `[A-Ea-e]?`，允许私募代码后跟份额类别字母。
+- **模型字段注释完善**：[`FundNavBase`](fund_nav_mcp/models/pydantic/fund.py) 添加 `source_reference` 字段说明；`fund_code` 校验注释更新。
+
 ## [0.12.4] 2026-05-16
 
 ### Added
