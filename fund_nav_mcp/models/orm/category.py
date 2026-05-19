@@ -6,6 +6,7 @@ from sqlalchemy import Integer, String, Text, UniqueConstraint, ForeignKeyConstr
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 
 from fund_nav_mcp.models.orm.base import Base
+from fund_nav_mcp.utils.enums import AbnormalType
 
 if TYPE_CHECKING:
     from fund_nav_mcp.models.orm.fund import Fund
@@ -42,8 +43,9 @@ class FundCategoryMapping(Base):
     """基金分类关联模型"""
     __tablename__ = 'fund_category_mapping'
 
-    fund_id: Mapped[int] = mapped_column(Integer, comment='基金ID')
-    category_id: Mapped[int] = mapped_column(Integer, comment='分类ID')
+    fund_id: Mapped[Optional[int]] = mapped_column(Integer, comment='基金ID')
+    category_id: Mapped[Optional[int]] = mapped_column(Integer, comment='分类ID')
+    abnormal: Mapped[Optional[AbnormalType]] = mapped_column(Integer, default=None, comment='异常标记')
 
     # 唯一约束
     __table_args__ = (

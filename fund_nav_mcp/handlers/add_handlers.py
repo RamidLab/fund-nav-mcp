@@ -1,14 +1,16 @@
 import re
-from typing import Any, List, Type
+from typing import Any, Dict, List, Type
 
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from fund_nav_mcp.db.core import get_manager
 from fund_nav_mcp.handlers.base_handlers import CodeResolveMixin
 from fund_nav_mcp.models.common import UtilResponse
+from fund_nav_mcp.models.orm import FundNav
 from fund_nav_mcp.models.orm.base import Base
-from fund_nav_mcp.utils.enums import Errcode
+from fund_nav_mcp.utils.enums import AbnormalType, Errcode
 
 
 class AddHandler(CodeResolveMixin):
@@ -97,6 +99,49 @@ class AddHandler(CodeResolveMixin):
             }
         return key
 
+    @staticmethod
+    async def _detect_nav_conflict(raw: Dict[str, Any], db_name: str) -> Dict[str, Any]:
+        """检测净值冲突：同日同源但值不同，自动升版本并标注需人工审核。
+
+        仅 FundNav 调用此方法。若已存在相同 (fund_id, nav_date, data_source)
+        的净值记录且数值不同，则将新记录的 version 设为 max+1 并标记 NavConflict。
+        """
+        mgr = (await get_manager("db", db_name))["mgr"]
+        fund_id = raw.get("fund_id")
+        nav_date = raw.get("nav_date")
+        data_source = raw.get("data_source")
+        if fund_id is None or nav_date is None or data_source is None:
+            return raw
+
+        existing = await mgr.fetch_all(
+            select(
+                FundNav.nav_unit, FundNav.nav_acc, FundNav.nav_adj,
+                FundNav.daily_return_rate, FundNav.version,
+            ).where(
+                FundNav.fund_id == fund_id,
+                FundNav.nav_date == nav_date,
+                FundNav.data_source == data_source,
+            )
+        )
+        if not existing:
+            return raw
+
+        # 比较数值是否相同
+        def _vals(r):
+            return r["nav_unit"], r["nav_acc"], r["nav_adj"], r["daily_return_rate"]
+
+        new_vals = (
+            raw.get("nav_unit"), raw.get("nav_acc"),
+            raw.get("nav_adj"), raw.get("daily_return_rate"),
+        )
+        if all(_vals(r) == new_vals for r in existing):
+            return raw  # 完全重复，交由 IntegrityError 处理
+
+        max_ver = max(r["version"] for r in existing)
+        raw["version"] = max_ver + 1
+        raw["abnormal"] = AbnormalType.NavConflict
+        return raw
+
     async def handle(
             self, orm_model: Type[Base], data: BaseModel, db_name: str = "default",
     ) -> UtilResponse[dict[str, Any]]:
@@ -112,6 +157,9 @@ class AddHandler(CodeResolveMixin):
             UtilResponse，包含新记录的 id。
         """
         raw = data.model_dump()
+
+        # 0) 写入前预处理：从 fund_name 补齐 fund_code 的份额后缀
+        raw = self._normalize_fund_codes([raw])[0]
 
         # 1) 检查自身 code 唯一性
         try:
@@ -140,7 +188,11 @@ class AddHandler(CodeResolveMixin):
         # 4) 时间字段处理
         raw = self._conv_date_fields([raw])[0]
 
-        # 5) 插入记录
+        # 5) 净值冲突检测（仅 FundNav）
+        if orm_model is FundNav:
+            raw = await self._detect_nav_conflict(raw, db_name)
+
+        # 6) 插入记录
         mgr = (await get_manager("db", db_name))["mgr"]
         try:
             orm_instance = orm_model(**raw)
@@ -173,6 +225,9 @@ class AddHandler(CodeResolveMixin):
         """
         total = len(data_list)
         raws = [d.model_dump() for d in data_list]
+
+        # 0) 写入前预处理：从 fund_name 补齐 fund_code 的份额后缀
+        raws = self._normalize_fund_codes(raws)
 
         # 1) 检查自身 code 唯一性（整批共享，失败则整体退出）
         try:
@@ -214,6 +269,8 @@ class AddHandler(CodeResolveMixin):
 
         for i, raw in enumerate(raws):
             try:
+                if orm_model is FundNav:
+                    raw = await self._detect_nav_conflict(raw, db_name)
                 instance = orm_model(**raw)
                 await mgr.insert(instance)
                 success_ids.append(instance.id)

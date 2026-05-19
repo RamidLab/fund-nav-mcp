@@ -1,6 +1,7 @@
 __all__ = [
     "NodeStatus", "FundStatus", "FundNavStatus", "FundType", "ShareClass", "FundRegulatoryType",
     "FundManagementType", "PeriodType", "FundDataSource", "ManagementScaleRange", "Errcode",
+    "AbnormalType",
 ]
 
 from enum import Enum
@@ -343,6 +344,31 @@ class ManagementScaleRange(_BaseIntEnum):
     @classmethod
     def from_label(cls, label: str) -> "ManagementScaleRange":
         return next((status for status in cls if status.label == label), cls.Unknown)
+
+
+class AbnormalType(_BaseIntEnum):
+    """通用异常标记枚举。NULL/None 表示正常，非 None 表示异常。
+
+    适用于所有 ORM 模型的 abnormal 字段：
+      - Fund: 基金代码格式异常（ShortBaseCode）、关联管理人/经理已删除（Orphaned）、父基金名称不一致（NameMismatch）
+      - FundNav: 关联基金已删除（Orphaned）、净值数据冲突需人工审核（NavConflict）
+      - FundReturn / FundHolding: 关联基金已删除（Orphaned）
+      - FundCategoryMapping: 关联基金或分类已删除（Orphaned）
+      - FundManagerPerson: 关联管理人机构已删除（Orphaned）
+    """
+    Placeholder = 0, "占位记录"
+    ShortBaseCode = 1, "私募基础编码不足6位"
+    Orphaned = 2, "关联记录已删除"
+    NameMismatch = 3, "父基金名称不一致"
+    NavConflict = 4, "净值数据冲突，需人工审核"
+
+    @classmethod
+    def _missing_(cls, value: int):
+        return cls._resolver(value, default=None)
+
+    @classmethod
+    def from_name(cls, name: str) -> Optional["AbnormalType"]:
+        return getattr(cls, name, None)
 
 
 class _ErrcodeEnum(int, Enum):

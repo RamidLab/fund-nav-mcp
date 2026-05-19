@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Optional, Type
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from fund_nav_mcp.db.core import get_manager
 from fund_nav_mcp.handlers.base_handlers import CodeResolveMixin
@@ -11,7 +11,7 @@ from fund_nav_mcp.models.orm import (
 )
 from fund_nav_mcp.models.orm.base import Base
 from fund_nav_mcp.models.pydantic import BaseDeleteModel
-from fund_nav_mcp.utils.enums import Errcode
+from fund_nav_mcp.utils.enums import AbnormalType, Errcode
 
 
 class DeleteHandler(CodeResolveMixin):
@@ -246,6 +246,59 @@ class DeleteHandler(CodeResolveMixin):
             f"无法定位 {orm_model.__tablename__} 记录：请提供 record_id、编码字段或名称字段。"
         )
 
+    @staticmethod
+    async def _mark_orphaned(
+            orm_model: Type[Base], target_id: int, db_name: str,
+    ) -> None:
+        """将关联到此记录的从属记录标记为异常（关联记录已删除）。
+
+        删除父记录前，找到所有引用它的子记录，标记 abnormal=Orphaned，
+        不再级联删除关联数据。外键值保留，便于事后追溯。
+        """
+        mgr = (await get_manager("db", db_name))["mgr"]
+        async with mgr.get_session() as session:
+            if orm_model is Fund:
+                for child_model, fk_col in [
+                    (FundNav, FundNav.fund_id),
+                    (FundReturn, FundReturn.fund_id),
+                    (FundHolding, FundHolding.fund_id),
+                    (FundCategoryMapping, FundCategoryMapping.fund_id),
+                ]:
+                    stmt = (
+                        update(child_model)
+                        .where(fk_col == target_id)
+                        .values(abnormal=AbnormalType.Orphaned)
+                    )
+                    await session.execute(stmt)
+            elif orm_model is FundManager:
+                stmt = (
+                    update(Fund)
+                    .where(Fund.fund_manager_id == target_id)
+                    .values(abnormal=AbnormalType.Orphaned)
+                )
+                await session.execute(stmt)
+                stmt = (
+                    update(FundManagerPerson)
+                    .where(FundManagerPerson.current_company_id == target_id)
+                    .values(abnormal=AbnormalType.Orphaned)
+                )
+                await session.execute(stmt)
+            elif orm_model is FundCategory:
+                stmt = (
+                    update(FundCategoryMapping)
+                    .where(FundCategoryMapping.category_id == target_id)
+                    .values(abnormal=AbnormalType.Orphaned)
+                )
+                await session.execute(stmt)
+            elif orm_model is FundManagerPerson:
+                stmt = (
+                    update(Fund)
+                    .where(Fund.fund_manager_person_id == target_id)
+                    .values(abnormal=AbnormalType.Orphaned)
+                )
+                await session.execute(stmt)
+            await session.commit()
+
     async def handle(
             self, orm_model: Type[Base], data: BaseDeleteModel, db_name: str = "default",
     ) -> UtilResponse[dict[str, int]]:
@@ -271,6 +324,9 @@ class DeleteHandler(CodeResolveMixin):
         record_id = data_dict.pop("record_id", None)
 
         target_id = await self._resolve_delete_target(orm_model, record_id, data_dict, db_name)
+
+        # 不再级联删除关联数据，改为标记异常
+        await self._mark_orphaned(orm_model, target_id, db_name)
 
         mgr = (await get_manager("db", db_name))["mgr"]
         await mgr.delete_by_id(orm_model, target_id)
@@ -305,6 +361,10 @@ class DeleteHandler(CodeResolveMixin):
             target_ids.append(target_id)
 
         unique_ids = list(dict.fromkeys(target_ids))
+
+        # 不再级联删除关联数据，改为标记异常
+        for tid in unique_ids:
+            await self._mark_orphaned(orm_model, tid, db_name)
 
         mgr = (await get_manager("db", db_name))["mgr"]
         count = await mgr.delete_batch_by_ids(orm_model, unique_ids)

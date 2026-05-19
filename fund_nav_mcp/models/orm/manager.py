@@ -8,7 +8,7 @@ from sqlalchemy import String, Date, DateTime, DECIMAL, Integer, Text, Index, Fo
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from fund_nav_mcp.models.orm.base import Base
-from fund_nav_mcp.utils.enums import ManagementScaleRange
+from fund_nav_mcp.utils.enums import AbnormalType, ManagementScaleRange
 
 if TYPE_CHECKING:
     from fund_nav_mcp.models.orm.fund import Fund
@@ -69,9 +69,10 @@ class FundManagerPerson(Base):
     current_company_id: Mapped[Optional[int]] = mapped_column(Integer, comment='当前任职公司ID')
     created_at: Mapped[DateTime] = mapped_column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
     updated_at: Mapped[DateTime] = mapped_column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
+    abnormal: Mapped[Optional[AbnormalType]] = mapped_column(Integer, default=None, comment='异常标记')
 
     # 关系
-    current_company: Mapped['FundManager'] = relationship('FundManager', back_populates='manager_person')
+    current_company: Mapped[Optional['FundManager']] = relationship('FundManager', back_populates='manager_person')
     funds: Mapped[List['Fund']] = relationship('Fund', back_populates='manager_person')
 
     __table_args__ = (

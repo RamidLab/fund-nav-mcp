@@ -1,3 +1,34 @@
+## [0.12.6] 2026-05-20
+
+### Added
+
+- **异常标记枚举**：新增 [`AbnormalType`](fund_nav_mcp/utils/enums.py) 枚举，包含 `Placeholder`（占位记录）、`ShortBaseCode`（私募基础编码不足6位）、`Orphaned`（关联记录已删除）、`NameMismatch`（父基金名称不一致）、`NavConflict`（净值数据冲突，需人工审核）。所有 ORM 模型新增 `abnormal` 字段，用于标记数据异常状态。
+
+- **净值冲突自动升级**：[`AddHandler._detect_nav_conflict`](fund_nav_mcp/handlers/add_handlers.py)  方法检测到相同 `(fund_id, nav_date, data_source)` 已存在且数值不同时，自动将新记录的 `version` 设为 `max(version)+1`，并标记 `abnormal=NavConflict`，避免唯一约束冲突，同时保留历史版本供人工审核。
+
+- **基金名称份额后缀自动补齐**：[`CodeResolveMixin._normalize_fund_codes`](fund_nav_mcp/handlers/base_handlers.py) 方法在写入前预处理：若 `fund_code` 无份额后缀但 `fund_name` 携带份额类别（如“某某稳健B类”），自动将 `fund_code` 补齐为 `fund_code + 后缀字母`（如 `000001B`），确保同一基金的不同份额拥有唯一编码。
+
+- **父基金名称自动同步**：创建子基金占位记录时，若 `fund_name` 携带份额后缀，自动剥离后缀作为父基金名称；若已有父基金名称不一致，则标记 `abnormal=NameMismatch`。
+
+- **删除标记孤儿记录**：[`DeleteHandler._mark_orphaned`](fund_nav_mcp/handlers/delete_handlers.py) 方法在删除父记录前，将关联子记录的 `abnormal` 字段设为 `Orphaned`（如删除基金时，其净值、收益率、持仓、分类映射均被标记；删除管理人时，关联基金和管理人员被标记）。原有关联级联删除（`cascade="all, delete"`）已全部移除，数据完整性通过标记而非物理删除维护。
+
+- **分类映射外键可空**：[`FundCategoryMapping`](fund_nav_mcp/models/orm/fund.py) 的 `fund_id` 和 `category_id` 改为 `Optional[int]`，使得孤儿映射可以保留外键值但标记异常，便于事后追溯。
+
+### Changed
+
+- **CodeResolveMixin 增强**：
+  - 新增 [`_strip_share_class_from_name`、`_parse_fund_name_for_share_class`](fund_nav_mcp/handlers/base_handlers.py) 方法，支持从基金名称中剥离/提取份额后缀字母。
+  - [`_normalize_fund_codes`](fund_nav_mcp/handlers/base_handlers.py) 方法 作为公开方法，在 `AddHandler.handle` / `handle_batch` 中优先调用，实现 code 补齐。
+  - 自动创建占位基金时，从请求中提取透传字段的同时，若发现父基金名称不一致则标记 `NameMismatch`；若基码长度小于6位则标记 `ShortBaseCode`。
+  - `_build_placeholder` 自动设置 `abnormal=Placeholder`，区分正常创建与自动创建的记录。
+
+- **ORM 模型级联策略调整**：
+  - `Fund.nav_records`、`returns`、`holdings` 关系移除 `cascade="all, delete"`，改为由应用层标记孤儿。
+  - `FundManagerPerson.current_company` 外键约束保留，但删除公司时不再自动删除人员，而是标记 `Orphaned`。
+  - 所有模型 `abnormal` 字段默认 `None`（正常），非 `None` 表示异常状态。
+
+- **Pydantic 响应模型更新**：`FundResponse`、`FundNavResponse`、`FundReturnResponse`、`FundHoldingResponse`、`FundManagerPersonResponse`、`FundCategoryMappingResponse` 均增加 `abnormal: Optional[AbnormalType]` 字段，供前端展示数据异常状态。
+
 ## [0.12.5] 2026-05-18
 
 ### Added

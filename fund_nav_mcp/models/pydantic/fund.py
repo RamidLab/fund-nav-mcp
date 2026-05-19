@@ -28,8 +28,9 @@ from fund_nav_mcp.models.pydantic.fund_validators import (
 )
 from fund_nav_mcp.utils.common import to_date_flexible
 from fund_nav_mcp.utils.enums import (
-    FundNavStatus, FundStatus, FundType, FundRegulatoryType, PeriodType,
-    FundDataSource, FundManagementType, ManagementScaleRange, ShareClass,
+    AbnormalType, FundNavStatus, FundStatus, FundType, FundRegulatoryType,
+    PeriodType, FundDataSource, FundManagementType, ManagementScaleRange,
+    ShareClass,
 )
 
 
@@ -327,6 +328,7 @@ class FundResponse(FundBase):
     fund_manager_person_id: Optional[int] = None
     fund_manager_id: Optional[int] = None
     parent_fund_id: Optional[int] = None
+    abnormal: Optional[AbnormalType] = None
     manager: Optional[FundManagerResponse] = None
     manager_person: Optional[FundManagerPersonResponse] = None
     nav_records: List[FundNavResponse] = []
@@ -360,7 +362,8 @@ class FundNavBase(FundNavValidators, BaseModel):
     daily_return_rate: Optional[Decimal] = Field(None, max_digits=10, decimal_places=4, description='日增长率')
     nav_status: FundNavStatus = Field(..., description='净值状态')
     data_source: FundDataSource = Field(..., description='数据来源')
-    source_reference: Optional[str] = Field(default=None, max_length=200, description='来源引用标识（邮件Message-ID、文件路径+hash、API请求ID等）')
+    source_reference: Optional[str] = Field(default=None, max_length=200,
+                                            description='来源引用标识（邮件Message-ID、文件路径+hash、API请求ID等）')
 
 
 class FundNavCreate(FundNavBase):
@@ -376,7 +379,8 @@ class FundNavUpdate(FundNavValidators, BaseModel):
     daily_return_rate: Optional[Decimal] = Field(None, max_digits=10, decimal_places=4, description='日增长率')
     nav_status: Optional[FundNavStatus] = Field(None, description='净值状态')
     data_source: Optional[FundDataSource] = Field(None, description='数据来源')
-    source_reference: Optional[str] = Field(default=None, max_length=200, description='来源引用标识（邮件Message-ID、文件路径+hash、API请求ID等）')
+    source_reference: Optional[str] = Field(default=None, max_length=200,
+                                            description='来源引用标识（邮件Message-ID、文件路径+hash、API请求ID等）')
 
 
 class FundNavDelete(BaseDeleteModel):
@@ -401,7 +405,8 @@ class FundNavDelete(BaseDeleteModel):
 class FundNavResponse(FundNavBase):
     id: int
     created_at: datetime
-    fund_id: int
+    fund_id: Optional[int] = None
+    abnormal: Optional[AbnormalType] = None
     fund: Optional[FundResponse] = None
 
     model_config = ConfigDict(from_attributes=True)
@@ -458,7 +463,8 @@ class FundReturnDelete(BaseDeleteModel):
 class FundReturnResponse(FundReturnBase):
     id: int
     created_at: datetime
-    fund_id: int
+    fund_id: Optional[int] = None
+    abnormal: Optional[AbnormalType] = None
     fund: Optional[FundResponse] = None
 
     model_config = ConfigDict(from_attributes=True)
@@ -517,7 +523,8 @@ class FundHoldingDelete(BaseDeleteModel):
 class FundHoldingResponse(FundHoldingBase):
     id: int
     created_at: datetime
-    fund_id: int
+    fund_id: Optional[int] = None
+    abnormal: Optional[AbnormalType] = None
     fund: Optional[FundResponse] = None
 
     model_config = ConfigDict(from_attributes=True)
@@ -663,6 +670,7 @@ class FundManagerPersonResponse(FundManagerPersonBase):
     created_at: datetime
     updated_at: datetime
     current_company_id: Optional[int] = None
+    abnormal: Optional[AbnormalType] = None
     current_company: Optional[FundManagerResponse] = None
     funds: List[FundResponse] = []
 
@@ -759,8 +767,9 @@ class FundCategoryMappingDelete(BaseDeleteModel):
 class FundCategoryMappingResponse(FundCategoryMappingBase):
     id: int
     created_at: datetime
-    fund_id: int
-    category_id: int
+    fund_id: Optional[int] = None
+    category_id: Optional[int] = None
+    abnormal: Optional[AbnormalType] = None
 
     model_config = ConfigDict(from_attributes=True)
 

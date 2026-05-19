@@ -24,7 +24,7 @@ dependencies = [
     "asyncpg>=0.31.0",
     "booktype>=1.5",
     "contextvars>=2.4",
-    "fastmcp[tasks]>=3.3.0",
+    "fastmcp[tasks]>=3.3.1",
     "influxdb-client>=1.50.0",
     "prefab-ui>=0.19.1",
     "psycopg2>=2.9.12",
@@ -45,7 +45,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "black>=26.3.1",
+    "black>=26.5.1",
     "faker>=40.18.0",
     "mypy>=2.1.0",
     "pytest>=9.0.3",

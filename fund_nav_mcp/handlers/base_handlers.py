@@ -8,7 +8,7 @@ from fund_nav_mcp.db.core import get_manager
 from fund_nav_mcp.models.orm import Fund, FundCategory, FundManager, FundManagerPerson
 from fund_nav_mcp.models.orm.base import Base
 from fund_nav_mcp.utils.common import to_date_flexible
-from fund_nav_mcp.utils.enums import ShareClass
+from fund_nav_mcp.utils.enums import AbnormalType, ShareClass
 
 
 class CodeResolveMixin:
@@ -76,6 +76,10 @@ class CodeResolveMixin:
         "A": ShareClass.A, "B": ShareClass.B, "C": ShareClass.C,
         "D": ShareClass.D, "E": ShareClass.E,
     }
+    # fund_name 份额后缀剥离/提取：某某稳健A类 → (某某稳健, A)
+    _SHARE_CLASS_NAME_PATTERN: re.Pattern = re.compile(
+        r'^(.+?)([A-Ea-e])(类(份额)?|份额)?$'
+    )
 
     _DATE_FIELDS: set = {
         "establishment_date", "registration_date", "nav_date", "calculation_date",
@@ -188,6 +192,61 @@ class CodeResolveMixin:
         return base, cls._SHARE_CLASS_SUFFIX_MAP.get(suffix)
 
     @classmethod
+    def _strip_share_class_from_name(cls, fund_name: str) -> str:
+        """从基金名称中剥离份额类别后缀。
+
+        某某A类 → 某某
+        某某A份额 → 某某
+        某某A → 某某
+        """
+        m = cls._SHARE_CLASS_NAME_PATTERN.match(fund_name.strip())
+        if m:
+            return m.group(1).strip()
+        return fund_name.strip()
+
+    @classmethod
+    def _parse_fund_name_for_share_class(cls, fund_name: str) -> Tuple[str, Optional[ShareClass]]:
+        """从基金名称中提取基名和份额类别。
+
+        某某稳健A类 → (某某稳健, ShareClass.A)
+        某某稳健A份额 → (某某稳健, ShareClass.A)
+        某某稳健A → (某某稳健, ShareClass.A)
+        某某稳健 → (某某稳健, None)
+        """
+        if not fund_name:
+            return fund_name, None
+        m = cls._SHARE_CLASS_NAME_PATTERN.match(fund_name.strip())
+        if not m:
+            return fund_name.strip(), None
+        base_name = m.group(1).strip()
+        suffix_letter = m.group(2).upper()
+        return base_name, cls._SHARE_CLASS_SUFFIX_MAP.get(suffix_letter)
+
+    @classmethod
+    def _normalize_fund_codes(cls, data_list: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """写入前预处理：当 fund_code 无份额后缀但 fund_name 携带份额类别时，自动补齐 code。
+
+        场景：fund_code="000001", fund_name="某某稳健B类" → fund_code 补齐为 "000001B"。
+        这样每条记录在后续 FK 解析阶段拥有唯一 code，避免多条不同份额的记录
+        被错误映射到第一个自动创建的占位子基金上。
+        """
+        for d in data_list:
+            code = d.get("fund_code")
+            name = d.get("fund_name")
+            if not isinstance(code, str) or not isinstance(name, str):
+                continue
+            base_code, code_sc = cls._parse_fund_code_for_share_class(code.strip())
+            if code_sc is not None:
+                continue
+            _, name_sc = cls._parse_fund_name_for_share_class(name.strip())
+            if name_sc is None:
+                continue
+            d["fund_code"] = f"{code.strip()}{name_sc.name}"
+            if "share_class" in d and d.get("share_class") in (None, ShareClass.NotApplicable):
+                d["share_class"] = name_sc
+        return data_list
+
+    @classmethod
     def _build_placeholder(
             cls, ref_model: Type[Base], lookup_col: str, code_val: str, extras: Dict[str, Any],
     ) -> Base:
@@ -210,6 +269,7 @@ class CodeResolveMixin:
             else:
                 kwargs[cn] = None
 
+        kwargs["abnormal"] = AbnormalType.Placeholder
         kwargs.update(extras)
         return ref_model(**kwargs)
 
@@ -269,6 +329,9 @@ class CodeResolveMixin:
                 if missing:
                     passthrough = self._ref_passthrough_columns(model, lookup_col)
                     for mc in missing:
+                        # 可能已被前面迭代（如父基金创建时）加入缓存，跳过避免重复插入
+                        if mc in cache:
+                            continue
                         # 从请求数据中提取该参照模型的透传字段
                         extras: Dict[str, Any] = {}
                         for d in data_list:
@@ -282,16 +345,45 @@ class CodeResolveMixin:
                                 extras[date_fn] = to_date_flexible(extras[date_fn])
                         # 检测 fund_code 中的份额后缀，自动创建父子关系
                         if model is Fund:
-                            base_code, share_class = self._parse_fund_code_for_share_class(mc)
+                            base_code, code_sc = self._parse_fund_code_for_share_class(mc)
+                            child_name: Optional[str] = extras.get("fund_name")
+
+                            share_class = code_sc
+                            if share_class is not None and child_name:
+                                # code 有后缀但 name 没有 → 同步丰富 name
+                                _, name_sc = self._parse_fund_name_for_share_class(child_name)
+                                if name_sc is None:
+                                    extras["fund_name"] = f"{child_name}{share_class.name}类"
+
                             if share_class is not None:
+                                # 创建 / 定位父基金
                                 if base_code not in cache:
-                                    parent_placeholder = self._build_placeholder(
-                                        model, lookup_col, base_code, {},
+                                    parent_extras: Dict[str, Any] = {}
+                                    if child_name:
+                                        parent_name = self._strip_share_class_from_name(child_name)
+                                        if parent_name != child_name:
+                                            parent_extras["fund_name"] = parent_name
+                                        parent_extras.setdefault("share_class", ShareClass.NotApplicable)
+                                    parent = self._build_placeholder(
+                                        model, lookup_col, base_code, parent_extras,
                                     )
-                                    await mgr.insert(parent_placeholder)
-                                    cache[base_code] = parent_placeholder.id
+                                    await mgr.insert(parent)
+                                    cache[base_code] = parent.id
+                                else:
+                                    if child_name:
+                                        expected_parent_name = self._strip_share_class_from_name(child_name)
+                                        parent_stmt = select(Fund.fund_name).where(
+                                            Fund.id == cache[base_code],
+                                        )
+                                        parent_row = await mgr.fetch_one(parent_stmt)
+                                        if parent_row and parent_row["fund_name"] != expected_parent_name:
+                                            extras.setdefault("abnormal", AbnormalType.NameMismatch)
+
                                 extras.setdefault("share_class", share_class)
                                 extras.setdefault("parent_fund_id", cache[base_code])
+                                if len(base_code) < 6:
+                                    extras.setdefault("abnormal", AbnormalType.ShortBaseCode)
+
                         placeholder = self._build_placeholder(model, lookup_col, mc, extras)
                         await mgr.insert(placeholder)
                         cache[mc] = placeholder.id
